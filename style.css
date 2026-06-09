@@ -1,0 +1,249 @@
+:root {
+  --bg: #0b0d13;
+  --panel: #161927;
+  --panel-2: #1d2133;
+  --text: #e7eaf3;
+  --dim: #8b93ad;
+  --gold: #fde68a;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  overflow: hidden;
+}
+
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+}
+
+.hidden { display: none !important; }
+
+/* ------------------------------------------------------------- HUD ----- */
+#hud {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(96vw, calc((100vh - 150px) * 1.5), 960px);
+  font-size: 15px;
+  color: var(--dim);
+}
+#hud-name { color: var(--text); font-weight: 700; letter-spacing: 0.02em; }
+.spacer { flex: 1; }
+
+.icon-btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid #262b40;
+  border-radius: 10px;
+  font-size: 16px;
+  line-height: 1;
+  padding: 8px 11px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.icon-btn:hover { background: var(--panel-2); }
+.icon-btn:active { transform: scale(0.93); }
+
+/* ----------------------------------------------------------- stage ----- */
+#stage {
+  position: relative;
+  width: min(96vw, calc((100vh - 150px) * 1.5), 960px);
+  aspect-ratio: 3 / 2;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px #232841;
+}
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#hint {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  background: rgba(13, 15, 24, 0.78);
+  border: 1px solid #2a3050;
+  color: var(--dim);
+  font-size: 14px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: floatIn 0.5s ease-out;
+}
+
+/* -------------------------------------------------------- overlays ----- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  background: rgba(10, 12, 19, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 18px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(40px, 9vw, 76px);
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.6);
+}
+.subtitle {
+  margin: -6px 0 8px;
+  color: var(--dim);
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  font-size: clamp(10px, 1.8vw, 14px);
+}
+
+.big-btn {
+  background: linear-gradient(135deg, #ec4899, #38bdf8);
+  color: #fff;
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: 0.04em;
+  border: none;
+  border-radius: 999px;
+  padding: 13px 46px;
+  cursor: pointer;
+  box-shadow: 0 8px 26px rgba(236, 72, 153, 0.35);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.big-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(56, 189, 248, 0.4); }
+.big-btn:active { transform: scale(0.96); }
+
+.small-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid #2a3050;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 11px 22px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.small-btn:hover { background: #252b45; }
+.small-btn:active { transform: scale(0.95); }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center; }
+
+#menu-levels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 168px));
+  gap: 9px;
+  margin: 8px 0;
+}
+.level-btn {
+  background: var(--panel);
+  border: 1px solid #262b40;
+  border-radius: 12px;
+  color: var(--text);
+  padding: 10px 8px 8px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: background 0.15s, transform 0.1s, border-color 0.15s;
+}
+.level-btn:hover { background: var(--panel-2); border-color: #3a4268; transform: translateY(-1px); }
+.level-btn.locked { opacity: 0.45; cursor: default; }
+.level-btn.locked:hover { background: var(--panel); border-color: #262b40; transform: none; }
+.lv-num { font-size: 17px; font-weight: 800; }
+.lv-name { font-size: 11.5px; color: var(--dim); }
+.lv-stars { font-size: 12px; color: var(--gold); min-height: 14px; }
+
+.howto {
+  color: var(--dim);
+  font-size: clamp(11px, 1.6vw, 13.5px);
+  line-height: 1.55;
+  max-width: 600px;
+  margin: 6px 0 0;
+}
+.howto .keys { opacity: 0.8; }
+.howto b { color: var(--text); }
+
+.complete-label {
+  margin: 0;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.3em;
+  font-size: 12px;
+}
+#screen-complete h2 { margin: 0; font-size: 34px; }
+#complete-stars { font-size: 38px; color: var(--gold); letter-spacing: 0.18em; text-shadow: 0 0 24px rgba(253, 230, 138, 0.45); }
+#complete-stats { margin: 0 0 6px; color: var(--dim); font-size: 15px; }
+
+/* -------------------------------------------------------- colorbar ----- */
+#colorbar {
+  display: flex;
+  gap: 12px;
+  width: min(96vw, calc((100vh - 150px) * 1.5), 960px);
+}
+.color-btn {
+  --c: #fff;
+  flex: 1;
+  height: 56px;
+  border: none;
+  border-radius: 14px;
+  background: var(--c);
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 5px 18px color-mix(in srgb, var(--c) 35%, transparent);
+  transition: transform 0.1s, opacity 0.15s, box-shadow 0.15s;
+}
+.color-btn:active { transform: scale(0.95); }
+.color-btn.phased {
+  opacity: 0.22;
+  box-shadow: inset 0 0 0 2px var(--c);
+  background: transparent;
+}
+.key-hint {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(0, 0, 0, 0.45);
+}
+.color-btn.phased .key-hint { color: var(--c); }
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes floatIn { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+@media (max-width: 720px) {
+  #menu-levels { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .color-btn { height: 64px; }
+  .howto .keys { display: none; }
+}
