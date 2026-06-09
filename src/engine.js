@@ -11,6 +11,9 @@ export const MAX_SPEED = 1500;
 export const MAGNET_RADIUS = 70;
 export const MAGNET_PULL = 1500;
 export const COLLECT_RADIUS = 24;
+export const BUMPER_R = 15;
+export const BUMPER_SPEED = 560;
+export const PORTAL_R = 20;
 export const PHASE_COLORS = ['m', 'y', 'g', 'c'];
 
 // Grid legend:
@@ -19,7 +22,12 @@ export const PHASE_COLORS = ['m', 'y', 'g', 'c'];
 //   \  neutral ramp falling to the right (solid lower-left triangle)
 //   m y g c  phaseable colored blocks
 //   x  hazard (spikes) — touching it resets the ball
-//   b  ball spawn       t  target spark
+//   o  bumper — launches the ball away at high speed
+//   @  portal entrance   &  portal exit (one-way; at most one pair)
+//   b  ball spawn        t  target spark
+//   M Y G C  ghost sparks — collectible only while that color is phased
+
+const GHOST_TARGETS = { M: 'm', Y: 'y', G: 'g', C: 'c' };
 
 export function parseLevel(def, index = 0) {
   const rows = def.grid.length;
@@ -27,6 +35,8 @@ export function parseLevel(def, index = 0) {
   const tiles = [];
   let spawn = null;
   const targets = [];
+  const bumpers = [];
+  let portalIn = null, portalOut = null;
   for (let r = 0; r < rows; r++) {
     if (def.grid[r].length !== cols) {
       throw new Error(`Level "${def.name}" row ${r} is ${def.grid[r].length} chars, expected ${cols}`);
@@ -34,12 +44,26 @@ export function parseLevel(def, index = 0) {
     const line = def.grid[r].split('');
     for (let c = 0; c < cols; c++) {
       const ch = line[c];
+      const cx = (c + 0.5) * TILE, cy = (r + 0.5) * TILE;
       if (ch === 'b') {
         if (spawn) throw new Error(`Level "${def.name}" has multiple spawns`);
-        spawn = { x: (c + 0.5) * TILE, y: (r + 0.5) * TILE };
+        spawn = { x: cx, y: cy };
         line[c] = '.';
       } else if (ch === 't') {
-        targets.push({ x: (c + 0.5) * TILE, y: (r + 0.5) * TILE });
+        targets.push({ x: cx, y: cy, color: null });
+        line[c] = '.';
+      } else if (GHOST_TARGETS[ch]) {
+        targets.push({ x: cx, y: cy, color: GHOST_TARGETS[ch] });
+        line[c] = '.';
+      } else if (ch === 'o') {
+        bumpers.push({ x: cx, y: cy });
+      } else if (ch === '@') {
+        if (portalIn) throw new Error(`Level "${def.name}" has multiple portal entrances`);
+        portalIn = { x: cx, y: cy };
+        line[c] = '.';
+      } else if (ch === '&') {
+        if (portalOut) throw new Error(`Level "${def.name}" has multiple portal exits`);
+        portalOut = { x: cx, y: cy };
         line[c] = '.';
       } else if (!'.#/\\xmygc'.includes(ch)) {
         throw new Error(`Level "${def.name}" has unknown tile '${ch}' at ${r},${c}`);
@@ -48,13 +72,14 @@ export function parseLevel(def, index = 0) {
     tiles.push(line);
   }
   if (!spawn) throw new Error(`Level "${def.name}" has no ball spawn (b)`);
-  if (!targets.length) throw new Error(`Level "${def.name}" has no targets (t)`);
+  if (!targets.length) throw new Error(`Level "${def.name}" has no targets`);
+  if (!!portalIn !== !!portalOut) throw new Error(`Level "${def.name}" has an unpaired portal`);
   return {
     index,
     name: def.name,
     hint: def.hint || '',
     par: def.par || 1,
-    rows, cols, tiles, spawn, targets,
+    rows, cols, tiles, spawn, targets, bumpers, portalIn, portalOut,
     width: cols * TILE,
     height: rows * TILE,
   };
@@ -65,7 +90,8 @@ export function createState(level) {
     ball: { x: level.spawn.x, y: level.spawn.y, vx: 0, vy: 0 },
     phased: null,                 // color currently phased out, or null
     ghost: new Set(),             // tiles kept intangible until the ball clears them
-    targets: level.targets.map(t => ({ x: t.x, y: t.y, collected: false })),
+    targets: level.targets.map(t => ({ x: t.x, y: t.y, color: t.color, collected: false })),
+    portalCd: 0,                  // cooldown after a warp
     time: 0,
     switches: 0,
     deaths: 0,
@@ -161,6 +187,7 @@ export function resetBall(state, level, countDeath) {
   state.ball.vy = 0;
   state.phased = null;
   state.ghost.clear();
+  state.portalCd = 0;
   for (const t of state.targets) t.collected = false;
   if (countDeath) state.deaths++;
   else { state.switches = 0; state.time = 0; }
@@ -180,6 +207,7 @@ export function step(state, level, dt) {
   let nearest = null, nd = Infinity;
   for (const t of state.targets) {
     if (t.collected) continue;
+    if (t.color && state.phased !== t.color) continue; // can't be collected right now
     const d = Math.hypot(t.x - b.x, t.y - b.y);
     if (d < nd) { nd = d; nearest = t; }
   }
@@ -220,11 +248,15 @@ export function step(state, level, dt) {
           const dir = vt >= 0 ? 1 : -1;
           b.vx = tx * dir * speed;
           b.vy = ty * dir * speed;
+          state.rampT = state.time;
           continue;
         }
         let vn2 = vn;
         if (vn < 0) {
-          const e = -vn > 150 ? RESTITUTION : 0;
+          // Fresh off a ramp, roll out smoothly instead of popping off the
+          // seam where the slope meets the flat.
+          const offRamp = state.time - (state.rampT ?? -1) < 0.06;
+          const e = -vn > 150 && !offRamp ? RESTITUTION : 0;
           vn2 = -e * vn;
           if (pass === 0 && e > 0) {
             events.push({ type: 'bounce', mag: Math.min(1, -vn / 900), x: b.x, y: b.y });
@@ -234,6 +266,34 @@ export function step(state, level, dt) {
         b.vy = hit.ny * vn2 + ty * vt;
       }
     }
+  }
+
+  // bumpers: launch the ball away at a fixed, satisfying speed
+  for (const bp of level.bumpers) {
+    const dx = b.x - bp.x, dy = b.y - bp.y;
+    const d = Math.hypot(dx, dy);
+    if (d >= BALL_R + BUMPER_R || d < 1e-6) continue;
+    const nx = dx / d, ny = dy / d;
+    b.x = bp.x + nx * (BALL_R + BUMPER_R);
+    b.y = bp.y + ny * (BALL_R + BUMPER_R);
+    const vn = b.vx * nx + b.vy * ny;
+    let ox = b.vx, oy = b.vy;
+    if (vn < 0) { ox -= 2 * vn * nx; oy -= 2 * vn * ny; }
+    const os = Math.hypot(ox, oy) || 1;
+    const out = Math.min(1000, Math.max(BUMPER_SPEED, os * 0.8));
+    b.vx = ox / os * out;
+    b.vy = oy / os * out;
+    events.push({ type: 'boing', x: bp.x + nx * BUMPER_R, y: bp.y + ny * BUMPER_R });
+  }
+
+  // portal: one-way teleport, velocity preserved
+  state.portalCd = Math.max(0, state.portalCd - dt);
+  if (level.portalIn && state.portalCd === 0 &&
+      Math.hypot(b.x - level.portalIn.x, b.y - level.portalIn.y) < PORTAL_R) {
+    events.push({ type: 'warp', from: { x: b.x, y: b.y }, to: level.portalOut });
+    b.x = level.portalOut.x;
+    b.y = level.portalOut.y;
+    state.portalCd = 0.25;
   }
 
   for (const key of state.ghost) {
@@ -253,9 +313,10 @@ export function step(state, level, dt) {
 
   for (const t of state.targets) {
     if (t.collected) continue;
+    if (t.color && state.phased !== t.color) continue; // ghost sparks need their color phased
     if (Math.hypot(t.x - b.x, t.y - b.y) < COLLECT_RADIUS) {
       t.collected = true;
-      events.push({ type: 'collect', x: t.x, y: t.y });
+      events.push({ type: 'collect', x: t.x, y: t.y, color: t.color });
     }
   }
   if (state.targets.every(t => t.collected)) {

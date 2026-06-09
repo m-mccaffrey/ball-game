@@ -1,6 +1,6 @@
 // game.js — rendering, input, screens and juice for Hueball.
 import {
-  TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS,
+  TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS, BUMPER_R,
   parseLevel, createState, step, setPhase, resetBall, starsFor, charAt,
 } from './engine.js';
 import { LEVELS } from './levels.js';
@@ -13,7 +13,23 @@ const NEUTRAL_EDGE = '#5b6480';
 const HAZARD = '#ef4444';
 const BG = '#10121a';
 const TARGET = '#fde68a';
+const BUMPER = '#fb7185';
+const PORTAL_IN = '#a78bfa';
+const PORTAL_OUT = '#2dd4bf';
 const SAVE_KEY = 'hueball-save-v1';
+
+function hexToRgb(h) {
+  return {
+    r: parseInt(h.slice(1, 3), 16),
+    g: parseInt(h.slice(3, 5), 16),
+    b: parseInt(h.slice(5, 7), 16),
+  };
+}
+const BG_RGB = hexToRgb(BG);
+const PALETTE_RGB = {};
+// When a color is phased out, the whole background shifts toward it so the
+// phased blocks look like they dissolve into the world.
+const DISSOLVE_MIX = 0.30;
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -28,6 +44,8 @@ let screen = 'menu';          // 'menu' | 'play' | 'complete'
 let phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
 let tintAlpha = 0;
 let tintColor = PALETTE.m;
+let bgCur = { ...BG_RGB };    // animated background color (dissolve effect)
+for (const col of PHASE_COLORS) PALETTE_RGB[col] = hexToRgb(PALETTE[col]);
 let shake = 0;
 let winTimer = 0;
 let particles = [];
@@ -35,7 +53,7 @@ let trail = [];
 let squash = 0;
 let hintTimer = 0;
 
-let save = { unlocked: 0, stars: {} };
+let save = { unlocked: 0, stars: {}, best: {} };
 try {
   const raw = localStorage.getItem(SAVE_KEY);
   if (raw) save = { ...save, ...JSON.parse(raw) };
@@ -225,12 +243,16 @@ function completeLevel() {
   const stars = starsFor(level, state);
   save.stars[levelIndex] = Math.max(save.stars[levelIndex] || 0, stars);
   save.unlocked = Math.max(save.unlocked, levelIndex + 1);
+  const prevBest = save.best[levelIndex];
+  const isRecord = prevBest === undefined || state.time < prevBest;
+  if (isRecord) save.best[levelIndex] = Math.round(state.time * 10) / 10;
   persist();
   $('complete-title').textContent = level.name;
   $('complete-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
   $('complete-stats').textContent =
     `${state.switches} switch${state.switches === 1 ? '' : 'es'} (par ${level.par})` +
     ` · ${state.time.toFixed(1)}s` +
+    (isRecord && prevBest !== undefined ? ' — new record!' : prevBest !== undefined ? ` (best ${prevBest.toFixed(1)}s)` : '') +
     (state.deaths ? ` · ${state.deaths} reset${state.deaths === 1 ? '' : 's'}` : ' · flawless');
   const last = levelIndex >= levels.length - 1;
   $('btn-next').textContent = last ? 'Back to levels' : 'Next level →';
@@ -323,8 +345,17 @@ function handleEvents(events) {
       spawnBurst(e.x, e.y + BALL_R, 'rgba(255,255,255,0.8)', Math.round(3 + e.mag * 5), 120, 0.4, 300);
     } else if (e.type === 'collect') {
       sfx.playCollect();
-      spawnBurst(e.x, e.y, TARGET, 26, 320, 0.9);
+      spawnBurst(e.x, e.y, e.color ? PALETTE[e.color] : TARGET, 26, 320, 0.9);
       updateHud();
+    } else if (e.type === 'boing') {
+      sfx.playBoing();
+      squash = 0.4;
+      spawnBurst(e.x, e.y, BUMPER, 10, 260, 0.5, 400);
+    } else if (e.type === 'warp') {
+      sfx.playWarp();
+      spawnBurst(e.from.x, e.from.y, PORTAL_IN, 16, 260, 0.6, 0);
+      spawnBurst(e.to.x, e.to.y, PORTAL_OUT, 16, 260, 0.6, 0);
+      trail = [];
     } else if (e.type === 'death') {
       sfx.playDeath();
       shake = 14;
@@ -359,12 +390,18 @@ function update(dt) {
     if (hintTimer > 6) show(hintEl, false);
   }
 
-  // animate phase alphas + background tint
+  // animate phase alphas + background dissolve
   for (const col of PHASE_COLORS) {
-    const goal = state.phased === col ? 0.16 : 1;
+    const goal = state.phased === col ? 0.06 : 1;
     phaseAlpha[col] += (goal - phaseAlpha[col]) * Math.min(1, dt * 10);
   }
-  const tintGoal = state.phased ? 0.12 : 0;
+  const mixRgb = state.phased ? PALETTE_RGB[state.phased] : BG_RGB;
+  const mix = state.phased ? DISSOLVE_MIX : 0;
+  const k = Math.min(1, dt * 8);
+  bgCur.r += (BG_RGB.r + (mixRgb.r - BG_RGB.r) * mix - bgCur.r) * k;
+  bgCur.g += (BG_RGB.g + (mixRgb.g - BG_RGB.g) * mix - bgCur.g) * k;
+  bgCur.b += (BG_RGB.b + (mixRgb.b - BG_RGB.b) * mix - bgCur.b) * k;
+  const tintGoal = state.phased ? 0.10 : 0;
   if (state.phased) tintColor = PALETTE[state.phased];
   tintAlpha += (tintGoal - tintAlpha) * Math.min(1, dt * 8);
   shake = Math.max(0, shake - dt * 40);
@@ -382,7 +419,7 @@ function update(dt) {
 
 function draw(now) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.fillStyle = BG;
+  ctx.fillStyle = `rgb(${bgCur.r | 0},${bgCur.g | 0},${bgCur.b | 0})`;
   ctx.fillRect(0, 0, level.width, level.height);
 
   if (shake > 0) {
@@ -424,25 +461,63 @@ function draw(now) {
     ctx.drawImage(layers.hazards, 0, 0);
   }
 
-  // targets
   const t = now / 1000;
+
+  // bumpers
+  for (const bp of level.bumpers) {
+    const pulse = 1 + 0.06 * Math.sin(t * 5 + bp.x * 0.1);
+    ctx.strokeStyle = BUMPER;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, BUMPER_R * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = BUMPER;
+    ctx.beginPath();
+    ctx.arc(bp.x, bp.y, BUMPER_R * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // portals
+  if (level.portalIn) {
+    drawPortal(level.portalIn, PORTAL_IN, t * 2.4);
+    drawPortal(level.portalOut, PORTAL_OUT, -t * 2.4);
+  }
+
+  // targets (gold sparks + colored ghost sparks)
   for (const tg of state.targets) {
     if (tg.collected) continue;
+    const active = !tg.color || state.phased === tg.color;
+    const color = tg.color ? PALETTE[tg.color] : TARGET;
     const pulse = 1 + 0.14 * Math.sin(t * 4 + tg.x);
-    ctx.strokeStyle = TARGET;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 2.5;
+    if (!active) {
+      ctx.globalAlpha = 0.4;
+      ctx.setLineDash([5, 6]);
+      ctx.lineDashOffset = -t * 18;
+    }
     ctx.beginPath();
     ctx.arc(tg.x, tg.y, 9 * pulse, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.globalAlpha = 0.35;
-    ctx.beginPath();
-    ctx.arc(tg.x, tg.y, COLLECT_RADIUS * (0.8 + 0.2 * Math.sin(t * 2.4 + tg.y)), 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.setLineDash([]);
+    if (active) {
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      ctx.arc(tg.x, tg.y, COLLECT_RADIUS * (0.8 + 0.2 * Math.sin(t * 2.4 + tg.y)), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(tg.x, tg.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.globalAlpha = 1;
-    ctx.fillStyle = TARGET;
-    ctx.beginPath();
-    ctx.arc(tg.x, tg.y, 3, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   // particles
@@ -477,6 +552,23 @@ function draw(now) {
   ctx.arc(0, 0, BALL_R, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+function drawPortal(p, color, spin) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 3; i++) {
+    const a = spin + i * (Math.PI * 2 / 3);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 14, a, a + 1.4);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 0.5;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, -spin * 1.6, -spin * 1.6 + 4.4);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 function frame(now) {

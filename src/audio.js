@@ -77,3 +77,13 @@ export function playDeath() {
 export function playClick() {
   tone({ freq: 700, type: 'sine', dur: 0.05, vol: 0.1 });
 }
+
+export function playBoing() {
+  tone({ freq: 180, type: 'triangle', dur: 0.16, vol: 0.26, slide: 320 });
+  tone({ freq: 90, type: 'sine', dur: 0.1, vol: 0.14, slide: 80 });
+}
+
+export function playWarp() {
+  tone({ freq: 1100, type: 'sine', dur: 0.22, vol: 0.18, slide: -700 });
+  tone({ freq: 300, type: 'sine', dur: 0.25, vol: 0.16, slide: 900, delay: 0.08 });
+}

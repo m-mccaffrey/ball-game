@@ -14,9 +14,11 @@ that color out of existence** — the ball drops straight through them. Press it
 bring it back. Only one color can be phased at a time: picking a new color snaps the
 previous one back, even if the ball is counting on it.
 
-Guide the ball to every golden **spark ◎** to clear the level. Avoid spikes, don't fall
-off the world, and watch for colors that do two jobs at once. **R** (or Space) resets the
-ball, **Esc** opens the level select.
+Guide the ball to every **spark ◎** to clear the level. Avoid spikes, don't fall
+off the world, and watch for colors that do two jobs at once. Later levels add
+**bumpers** that launch the ball, one-way **portals**, and colored **ghost sparks**
+that only exist while their color is phased. **R** (or Space) resets the ball,
+**Esc** opens the level select.
 
 Each level has a **par** — clear it within par switches and without dying for ★★★.
 Progress and stars are saved locally.
@@ -47,7 +49,10 @@ now plain ASCII art in [`src/levels.js`](src/levels.js) — a 24×16 grid of 40p
 /   ramp rising right     \   ramp falling right
 m y g c                   phaseable colored blocks
 x   spikes (resets the ball)
+o   bumper (launches the ball)
+@   portal in             &   portal out (one-way, one pair max)
 b   ball spawn            t   target spark
+M Y G C                   ghost sparks — collectible only while that color is phased
 ```
 
 Add a level by appending `{ name, hint, par, grid }` to `LEVELS`. The grid is validated

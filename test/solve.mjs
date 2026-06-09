@@ -48,6 +48,35 @@ const SOLUTIONS = {
     { when: { xgt: 7.0 }, press: 'c' },
     { after: 2.0, when: { xgt: 17.0 }, press: 'g' },
   ],
+  'Bumper Alley': [
+    { when: { xgt: 15.0 }, press: 'y' },
+  ],
+  'Now You See Me': [
+    { when: { rest: true }, press: 'm' },
+    { when: { rest: true }, press: 'y' },
+    { when: { rest: true }, press: 'c' },
+  ],
+  'Wormhole': [
+    { when: { rest: true }, press: 'm' },
+  ],
+  'Loop-de-Loop': [
+    { when: { rest: true }, press: 'm' },
+    { when: { rest: true }, press: 'y' },
+    { when: { rest: true }, press: 'm' },
+    { after: 0.1, when: { ygt: 6.0 }, press: 'g' },
+  ],
+  'Drive-By': [
+    { when: { xgt: 4.5 }, press: 'm' },
+    { when: { xgt: 8.5 }, press: 'y' },
+    { when: { xgt: 12.5 }, press: 'g' },
+    { when: { xgt: 16.5 }, press: 'c' },
+  ],
+  'Grand Tour': [
+    { after: 0.5, when: { rest: true }, press: 'm' },
+    { when: { xgt: 4.5 }, press: 'g' },
+    { when: { xgt: 15.5 }, press: 'y' },
+    { after: 2.0, when: { ygt: 13.2 }, press: 'c' },
+  ],
 };
 
 const DT = 1 / 240;
