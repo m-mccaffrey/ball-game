@@ -1,0 +1,503 @@
+// game.js — rendering, input, screens and juice for Hueball.
+import {
+  TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS,
+  parseLevel, createState, step, setPhase, resetBall, starsFor, charAt,
+} from './engine.js';
+import { LEVELS } from './levels.js';
+import * as sfx from './audio.js';
+
+const PALETTE = { m: '#ec4899', y: '#facc15', g: '#4ade80', c: '#38bdf8' };
+const COLOR_NAMES = { m: 'magenta', y: 'yellow', g: 'green', c: 'cyan' };
+const NEUTRAL = '#3a4054';
+const NEUTRAL_EDGE = '#5b6480';
+const HAZARD = '#ef4444';
+const BG = '#10121a';
+const TARGET = '#fde68a';
+const SAVE_KEY = 'hueball-save-v1';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ---------------------------------------------------------------- state ---
+const levels = LEVELS.map((def, i) => parseLevel(def, i));
+let levelIndex = 0;
+let level = levels[0];
+let state = createState(level);
+let layers = null;            // baked per-color canvases
+let screen = 'menu';          // 'menu' | 'play' | 'complete'
+let phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
+let tintAlpha = 0;
+let tintColor = PALETTE.m;
+let shake = 0;
+let winTimer = 0;
+let particles = [];
+let trail = [];
+let squash = 0;
+let hintTimer = 0;
+
+let save = { unlocked: 0, stars: {} };
+try {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (raw) save = { ...save, ...JSON.parse(raw) };
+} catch (e) { /* private mode etc. — play without saving */ }
+
+function persist() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* ignore */ }
+}
+
+// ------------------------------------------------------------ DOM hooks ---
+const $ = id => document.getElementById(id);
+const hud = $('hud');
+const colorbar = $('colorbar');
+const hintEl = $('hint');
+const menuEl = $('screen-menu');
+const completeEl = $('screen-complete');
+
+function show(el, on) { el.classList.toggle('hidden', !on); }
+
+// -------------------------------------------------------- layer baking ----
+function bakeLayer(lv, match, fill, edge) {
+  const cv = document.createElement('canvas');
+  cv.width = lv.width;
+  cv.height = lv.height;
+  const g = cv.getContext('2d');
+  g.fillStyle = fill;
+  for (let r = 0; r < lv.rows; r++) {
+    for (let c = 0; c < lv.cols; c++) {
+      const ch = lv.tiles[r][c];
+      if (!match(ch)) continue;
+      const x = c * TILE, y = r * TILE;
+      g.beginPath();
+      if (ch === '/') {
+        g.moveTo(x + TILE, y); g.lineTo(x + TILE, y + TILE); g.lineTo(x, y + TILE);
+      } else if (ch === '\\') {
+        g.moveTo(x, y); g.lineTo(x + TILE, y + TILE); g.lineTo(x, y + TILE);
+      } else {
+        g.rect(x, y, TILE, TILE);
+      }
+      g.closePath();
+      g.fill();
+    }
+  }
+  // Light top edges where a tile is exposed to the sky of its own group.
+  g.strokeStyle = edge;
+  g.lineWidth = 3;
+  g.lineCap = 'round';
+  for (let r = 0; r < lv.rows; r++) {
+    for (let c = 0; c < lv.cols; c++) {
+      const ch = lv.tiles[r][c];
+      if (!match(ch)) continue;
+      const above = r > 0 ? lv.tiles[r - 1][c] : '#';
+      const x = c * TILE, y = r * TILE + 1.5;
+      g.beginPath();
+      if (ch === '/') { g.moveTo(x, y + TILE - 3); g.lineTo(x + TILE - 1.5, y); }
+      else if (ch === '\\') { g.moveTo(x + 1.5, y); g.lineTo(x + TILE, y + TILE - 3); }
+      else if (!match(above)) { g.moveTo(x + 2, y); g.lineTo(x + TILE - 2, y); }
+      else continue;
+      g.stroke();
+    }
+  }
+  return cv;
+}
+
+function bakeHazards(lv) {
+  const cv = document.createElement('canvas');
+  cv.width = lv.width;
+  cv.height = lv.height;
+  const g = cv.getContext('2d');
+  for (let r = 0; r < lv.rows; r++) {
+    for (let c = 0; c < lv.cols; c++) {
+      if (lv.tiles[r][c] !== 'x') continue;
+      const x = c * TILE, y = r * TILE;
+      g.fillStyle = '#7f1d1d';
+      g.fillRect(x, y + TILE * 0.55, TILE, TILE * 0.45);
+      g.fillStyle = HAZARD;
+      const n = 4, w = TILE / n;
+      for (let i = 0; i < n; i++) {
+        g.beginPath();
+        g.moveTo(x + i * w, y + TILE * 0.6);
+        g.lineTo(x + i * w + w / 2, y + TILE * 0.08);
+        g.lineTo(x + (i + 1) * w, y + TILE * 0.6);
+        g.closePath();
+        g.fill();
+      }
+    }
+  }
+  return cv;
+}
+
+function bakeAll(lv) {
+  const out = {
+    neutral: bakeLayer(lv, ch => ch === '#' || ch === '/' || ch === '\\', NEUTRAL, NEUTRAL_EDGE),
+    hazards: bakeHazards(lv),
+    colors: {},
+  };
+  for (const col of PHASE_COLORS) {
+    out.colors[col] = bakeLayer(lv, ch => ch === col, PALETTE[col], 'rgba(255,255,255,0.45)');
+  }
+  return out;
+}
+
+// ----------------------------------------------------------- particles ----
+function spawnBurst(x, y, color, count, speed, life, grav = 600) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = speed * (0.3 + Math.random() * 0.7);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s - speed * 0.3,
+      life, maxLife: life, grav,
+      size: 2 + Math.random() * 3.5,
+      color,
+    });
+  }
+}
+
+function confetti() {
+  for (const t of state.targets) {
+    for (const col of PHASE_COLORS) {
+      spawnBurst(t.x, t.y, PALETTE[col], 14, 420, 1.3, 700);
+    }
+  }
+}
+
+// -------------------------------------------------------------- control ---
+function press(color) {
+  if (screen !== 'play' || state.won) return;
+  const was = state.phased;
+  if (!setPhase(state, level, color)) return;
+  sfx.playSwitch(color, state.phased === null);
+  tintColor = PALETTE[state.phased || was || color];
+  updateColorbar();
+  updateHud();
+}
+
+function manualReset() {
+  if (screen !== 'play') return;
+  resetBall(state, level, false);
+  trail = [];
+  updateColorbar();
+  updateHud();
+  sfx.playClick();
+}
+
+function loadLevel(i, fresh = true) {
+  levelIndex = Math.max(0, Math.min(levels.length - 1, i));
+  level = levels[levelIndex];
+  state = createState(level);
+  layers = bakeAll(level);
+  trail = [];
+  particles = [];
+  winTimer = 0;
+  hintTimer = 0;
+  phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
+  if (fresh) {
+    $('hud-name').textContent = `${levelIndex + 1}. ${level.name}`;
+    hintEl.textContent = level.hint;
+    show(hintEl, true);
+    updateColorbar();
+    updateHud();
+  }
+}
+
+function startLevel(i) {
+  loadLevel(i);
+  screen = 'play';
+  show(menuEl, false);
+  show(completeEl, false);
+  show(hud, true);
+  show(colorbar, true);
+}
+
+function openMenu() {
+  screen = 'menu';
+  buildLevelGrid();
+  show(menuEl, true);
+  show(completeEl, false);
+  show(hud, false);
+  show(colorbar, false);
+  show(hintEl, false);
+}
+
+function completeLevel() {
+  screen = 'complete';
+  const stars = starsFor(level, state);
+  save.stars[levelIndex] = Math.max(save.stars[levelIndex] || 0, stars);
+  save.unlocked = Math.max(save.unlocked, levelIndex + 1);
+  persist();
+  $('complete-title').textContent = level.name;
+  $('complete-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
+  $('complete-stats').textContent =
+    `${state.switches} switch${state.switches === 1 ? '' : 'es'} (par ${level.par})` +
+    ` · ${state.time.toFixed(1)}s` +
+    (state.deaths ? ` · ${state.deaths} reset${state.deaths === 1 ? '' : 's'}` : ' · flawless');
+  const last = levelIndex >= levels.length - 1;
+  $('btn-next').textContent = last ? 'Back to levels' : 'Next level →';
+  show(completeEl, true);
+  show(colorbar, false);
+}
+
+// ----------------------------------------------------------------- HUD ----
+function updateColorbar() {
+  for (const btn of colorbar.querySelectorAll('.color-btn')) {
+    btn.classList.toggle('phased', state.phased === btn.dataset.color);
+  }
+}
+
+function updateHud() {
+  $('hud-stats').textContent = `⦾ ${state.switches}`;
+}
+
+function buildLevelGrid() {
+  const grid = $('menu-levels');
+  grid.innerHTML = '';
+  levels.forEach((lv, i) => {
+    const locked = i > save.unlocked;
+    const btn = document.createElement('button');
+    btn.className = 'level-btn' + (locked ? ' locked' : '');
+    const stars = save.stars[i] || 0;
+    btn.innerHTML = locked
+      ? `<span class="lv-num">\u{1F512}</span><span class="lv-name">${lv.name}</span>`
+      : `<span class="lv-num">${i + 1}</span><span class="lv-name">${lv.name}</span>` +
+        `<span class="lv-stars">${stars ? '★'.repeat(stars) + '☆'.repeat(3 - stars) : ''}</span>`;
+    if (!locked) btn.addEventListener('click', () => { sfx.unlock(); sfx.playClick(); startLevel(i); });
+    grid.appendChild(btn);
+  });
+}
+
+// ----------------------------------------------------------------- input --
+const KEY_COLOR = {
+  '1': 'm', a: 'm', j: 'm',
+  '2': 'y', s: 'y', k: 'y',
+  '3': 'g', d: 'g', l: 'g',
+  '4': 'c', f: 'c', ';': 'c',
+};
+
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  sfx.unlock();
+  const k = e.key.toLowerCase();
+  if (KEY_COLOR[k]) { press(KEY_COLOR[k]); e.preventDefault(); }
+  else if (k === 'r' || k === ' ') { manualReset(); e.preventDefault(); }
+  else if (k === 'escape') { if (screen === 'play' || screen === 'complete') openMenu(); }
+  else if (k === 'n' && screen === 'complete') $('btn-next').click();
+});
+
+for (const btn of colorbar.querySelectorAll('.color-btn')) {
+  btn.style.setProperty('--c', PALETTE[btn.dataset.color]);
+  const fire = e => { e.preventDefault(); sfx.unlock(); press(btn.dataset.color); };
+  btn.addEventListener('pointerdown', fire);
+}
+$('btn-reset').addEventListener('click', () => { sfx.unlock(); manualReset(); });
+$('btn-levels').addEventListener('click', () => { sfx.playClick(); openMenu(); });
+$('btn-play').addEventListener('click', () => {
+  sfx.unlock(); sfx.playClick();
+  startLevel(Math.min(save.unlocked, levels.length - 1));
+});
+$('btn-next').addEventListener('click', () => {
+  sfx.playClick();
+  if (levelIndex >= levels.length - 1) openMenu();
+  else startLevel(levelIndex + 1);
+});
+$('btn-replay').addEventListener('click', () => { sfx.playClick(); startLevel(levelIndex); });
+$('btn-complete-menu').addEventListener('click', () => { sfx.playClick(); openMenu(); });
+
+const muteBtn = $('btn-mute');
+muteBtn.addEventListener('click', () => {
+  sfx.unlock();
+  sfx.setMuted(!sfx.isMuted());
+  muteBtn.textContent = sfx.isMuted() ? '\u{1F507}' : '\u{1F50A}';
+});
+
+// ----------------------------------------------------------------- loop ---
+const SIM_DT = 1 / 240;
+let acc = 0;
+let lastT = performance.now();
+
+function handleEvents(events) {
+  for (const e of events) {
+    if (e.type === 'bounce') {
+      sfx.playBounce(e.mag);
+      squash = Math.min(0.45, 0.2 + e.mag * 0.3);
+      spawnBurst(e.x, e.y + BALL_R, 'rgba(255,255,255,0.8)', Math.round(3 + e.mag * 5), 120, 0.4, 300);
+    } else if (e.type === 'collect') {
+      sfx.playCollect();
+      spawnBurst(e.x, e.y, TARGET, 26, 320, 0.9);
+      updateHud();
+    } else if (e.type === 'death') {
+      sfx.playDeath();
+      shake = 14;
+      spawnBurst(e.x, Math.min(e.y, level.height), '#f8fafc', 24, 380, 0.8);
+      trail = [];
+      updateColorbar();
+      updateHud();
+    } else if (e.type === 'win') {
+      sfx.playWin();
+      confetti();
+      winTimer = 1.0;
+    }
+  }
+}
+
+function update(dt) {
+  if (screen === 'play' || screen === 'complete') {
+    if (!state.won) {
+      acc += dt;
+      acc = Math.min(acc, 0.1);
+      while (acc >= SIM_DT) {
+        handleEvents(step(state, level, SIM_DT));
+        acc -= SIM_DT;
+      }
+      trail.push({ x: state.ball.x, y: state.ball.y });
+      if (trail.length > 16) trail.shift();
+    } else if (screen === 'play') {
+      winTimer -= dt;
+      if (winTimer <= 0) completeLevel();
+    }
+    hintTimer += dt;
+    if (hintTimer > 6) show(hintEl, false);
+  }
+
+  // animate phase alphas + background tint
+  for (const col of PHASE_COLORS) {
+    const goal = state.phased === col ? 0.16 : 1;
+    phaseAlpha[col] += (goal - phaseAlpha[col]) * Math.min(1, dt * 10);
+  }
+  const tintGoal = state.phased ? 0.12 : 0;
+  if (state.phased) tintColor = PALETTE[state.phased];
+  tintAlpha += (tintGoal - tintAlpha) * Math.min(1, dt * 8);
+  shake = Math.max(0, shake - dt * 40);
+  squash = Math.max(0, squash - dt * 2.2);
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    p.vy += p.grav * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+}
+
+function draw(now) {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, level.width, level.height);
+
+  if (shake > 0) {
+    ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+  }
+
+  // faint grid dots
+  ctx.fillStyle = 'rgba(255,255,255,0.045)';
+  for (let r = 1; r < level.rows; r++) {
+    for (let c = 1; c < level.cols; c++) {
+      ctx.fillRect(c * TILE - 1, r * TILE - 1, 2, 2);
+    }
+  }
+
+  if (tintAlpha > 0.005) {
+    ctx.globalAlpha = tintAlpha;
+    const grad = ctx.createRadialGradient(
+      level.width / 2, level.height / 2, 100,
+      level.width / 2, level.height / 2, level.width * 0.7);
+    grad.addColorStop(0, tintColor);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, level.width, level.height);
+    ctx.globalAlpha = 1;
+  }
+
+  if (layers) {
+    ctx.drawImage(layers.neutral, 0, 0);
+    for (const col of PHASE_COLORS) {
+      const a = phaseAlpha[col];
+      if (a > 0.995) {
+        ctx.drawImage(layers.colors[col], 0, 0);
+      } else {
+        ctx.globalAlpha = a;
+        ctx.drawImage(layers.colors[col], 0, 0);
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.drawImage(layers.hazards, 0, 0);
+  }
+
+  // targets
+  const t = now / 1000;
+  for (const tg of state.targets) {
+    if (tg.collected) continue;
+    const pulse = 1 + 0.14 * Math.sin(t * 4 + tg.x);
+    ctx.strokeStyle = TARGET;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(tg.x, tg.y, 9 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.beginPath();
+    ctx.arc(tg.x, tg.y, COLLECT_RADIUS * (0.8 + 0.2 * Math.sin(t * 2.4 + tg.y)), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = TARGET;
+    ctx.beginPath();
+    ctx.arc(tg.x, tg.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // particles
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  // ball trail
+  for (let i = 0; i < trail.length; i++) {
+    const k = i / trail.length;
+    ctx.globalAlpha = k * 0.25;
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(trail[i].x, trail[i].y, BALL_R * k * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ball (with bounce squash)
+  const b = state.ball;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.scale(1 + squash, 1 - squash);
+  const bg = ctx.createRadialGradient(-3, -4, 2, 0, 0, BALL_R + 2);
+  bg.addColorStop(0, '#ffffff');
+  bg.addColorStop(1, '#cbd5e1');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.arc(0, 0, BALL_R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  update(dt);
+  draw(now);
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- sizing --
+let dpr = 1;
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = level.width * dpr;
+  canvas.height = level.height * dpr;
+}
+window.addEventListener('resize', resize);
+
+// ------------------------------------------------------------------ go ----
+loadLevel(Math.min(save.unlocked, levels.length - 1), false);
+resize();
+openMenu();
+requestAnimationFrame(frame);

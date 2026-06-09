@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>Hueball</title>
+  <meta name="description" content="Hueball — a chromatic gravity puzzle. Phase colors in and out of existence to guide the ball to every spark.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="hud" class="hidden">
+      <button id="btn-levels" class="icon-btn" title="Level select (Esc)">☰</button>
+      <span id="hud-name"></span>
+      <span id="hud-stats" title="Color switches"></span>
+      <span class="spacer"></span>
+      <button id="btn-reset" class="icon-btn" title="Reset ball (R / Space)">↺</button>
+      <button id="btn-mute" class="icon-btn" title="Toggle sound">🔊</button>
+    </header>
+
+    <div id="stage">
+      <canvas id="game" width="960" height="640"></canvas>
+      <div id="hint" class="hidden"></div>
+
+      <div id="screen-menu" class="overlay">
+        <h1 class="title">
+          <span style="color:#ec4899">H</span><span style="color:#facc15">U</span><span
+            style="color:#4ade80">E</span><span style="color:#38bdf8">B</span><span
+            style="color:#ec4899">A</span><span style="color:#facc15">L</span><span
+            style="color:#4ade80">L</span>
+        </h1>
+        <p class="subtitle">a chromatic gravity puzzle</p>
+        <button id="btn-play" class="big-btn">Play</button>
+        <div id="menu-levels"></div>
+        <p class="howto">
+          Phase a color out of existence and the ball falls right through it.<br>
+          Guide it to every <span style="color:#fde68a">spark ◎</span>.
+          Only one color can be phased at a time — picking a new one snaps the old one back.<br>
+          <span class="keys">Keys: <b>1 2 3 4</b> (or <b>A S D F</b> / <b>J K L ;</b>) · <b>R</b> reset · <b>Esc</b> levels</span>
+        </p>
+      </div>
+
+      <div id="screen-complete" class="overlay hidden">
+        <p class="complete-label">level clear</p>
+        <h2 id="complete-title"></h2>
+        <div id="complete-stars"></div>
+        <p id="complete-stats"></p>
+        <div class="row">
+          <button id="btn-complete-menu" class="small-btn">Levels</button>
+          <button id="btn-replay" class="small-btn">Replay</button>
+          <button id="btn-next" class="big-btn">Next level →</button>
+        </div>
+      </div>
+    </div>
+
+    <nav id="colorbar" class="hidden">
+      <button class="color-btn" data-color="m"><span class="key-hint">1</span></button>
+      <button class="color-btn" data-color="y"><span class="key-hint">2</span></button>
+      <button class="color-btn" data-color="g"><span class="key-hint">3</span></button>
+      <button class="color-btn" data-color="c"><span class="key-hint">4</span></button>
+    </nav>
+  </div>
+  <script type="module" src="src/game.js"></script>
+</body>
+</html>
