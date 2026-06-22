@@ -77,6 +77,38 @@ const SOLUTIONS = {
     { when: { xgt: 15.5 }, press: 'y' },
     { after: 2.0, when: { ygt: 13.2 }, press: 'c' },
   ],
+  'Express': [
+    { when: { rest: true }, press: 'm' },
+  ],
+  'Sorting Office': [
+    { when: { xgt: 5.0 }, press: 'y' },
+  ],
+  'Keyhole': [
+    { when: { xgt: 6.0 }, press: 'm' },
+    { when: { xgt: 10.0 }, press: 'm' },
+  ],
+  'Crossroads': [
+    { when: { xgt: 3.0 }, press: 'm' },
+    { when: { xgt: 8.0 }, press: 'y' },
+  ],
+  'Sweet Tooth': [
+    { when: { rest: true }, press: 'm' },
+    { when: { rest: true }, press: 'y' },
+    { when: { rest: true }, press: 'c' },
+    { when: { rest: true }, press: 'g' },
+  ],
+  'Rainbow Run': [
+    { when: { xgt: 4.0 }, press: 'm' },
+    { when: { xgt: 8.0 }, press: 'y' },
+    { when: { xgt: 12.0 }, press: 'c' },
+    { when: { xgt: 16.0 }, press: 'g' },
+  ],
+  'Crossfire': [
+    { when: { rest: true }, press: 'm' },
+    { when: { rest: true }, press: 'y' },
+    { when: { rest: true }, press: 'c' },
+    { when: { rest: true }, press: 'g' },
+  ],
 };
 
 const DT = 1 / 240;
