@@ -71,8 +71,24 @@ of presses — an honest `par`. `node test/auto-solve.mjs` runs it over every le
   warning when a `par` is merely loose.
 
 This is what makes new content cheap: design a grid, run the solver, ship. It also grades
-difficulty (press count) and is the verification half of a future procedural generator —
-emit layouts, keep the ones the solver finds solvable and interesting.
+difficulty (press count) and is the verification half of the procedural generator.
+
+## Procedural generation
+
+`src/generator.js` emits parametric layouts (currently `gauntlet` and `layered`
+archetypes); `tools/generate.mjs` runs them through a funnel and keeps only the good ones:
+
+```sh
+node tools/generate.mjs --want 12 --seed 7   # writes survivors to tools/generated.mjs
+```
+
+The funnel rejects candidates that are unsolvable, trivial (par < 2), too hard (par > 5),
+**vestigial** (the solver's solution skips an obstacle — e.g. a narrow pit the ball just
+rolls over, a misleading dead element), or **duplicate** (same canonical puzzle up to a
+color permutation). What survives is solvable, non-trivial, clean, and distinct — then a
+human curates the keepers into a world. The `Generated Gauntlet` levels (Twin Gates →
+The Long Way) were produced this way. Adding archetypes widens the space the generator can
+explore; the solver verifies whatever they emit, so new mechanics cost nothing to support.
 
 ## Development
 
@@ -80,6 +96,7 @@ emit layouts, keep the ones the solver finds solvable and interesting.
 python3 -m http.server          # then open http://localhost:8000
 node test/auto-solve.mjs        # verify every level + check pars
 node test/auto-solve.mjs twins  # solve just levels matching a name
+node tools/generate.mjs --seed 3  # generate fresh candidate levels
 ```
 
 | File | What it is |
@@ -89,4 +106,6 @@ node test/auto-solve.mjs twins  # solve just levels matching a name
 | `src/game.js` | Rendering, input, screens, particles, saves. |
 | `src/audio.js` | Tiny WebAudio synth — no sound assets. |
 | `src/solver.js` | Search solver: proves solvability, computes minimum-press par. |
+| `src/generator.js` | Parametric level generator (archetypes + seeded RNG). |
 | `test/auto-solve.mjs` | Runs the solver over every level as the verification gate. |
+| `tools/generate.mjs` | Generate → solver-screen → dedup → curate pipeline. |
