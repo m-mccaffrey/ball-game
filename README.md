@@ -56,20 +56,35 @@ M Y G C                   ghost sparks — collectible only while that color is 
 ```
 
 Add a level by appending `{ name, hint, par, grid }` to `LEVELS`. The grid is validated
-at load, and `node test/solve.mjs` runs a scripted solution for every level through the
-real physics engine to prove it's still solvable at par.
+at load — and you do **not** write a solution. The solver finds one for you.
+
+## The solver
+
+`src/solver.js` drives the real engine at the real timestep and searches color-press
+sequences with iterative deepening, so the first win it finds uses the **minimum** number
+of presses — an honest `par`. `node test/auto-solve.mjs` runs it over every level and:
+
+- proves each is winnable (no hand-written solution required), and
+- fails the build if a declared `par` is **unachievable** (lower than the true optimum),
+  warning when a `par` is merely loose.
+
+This is what makes new content cheap: design a grid, run the solver, ship. It also grades
+difficulty (press count) and is the verification half of a future procedural generator —
+emit layouts, keep the ones the solver finds solvable and interesting.
 
 ## Development
 
 ```sh
-python3 -m http.server      # then open http://localhost:8000
-node test/solve.mjs         # verify all levels are solvable
+python3 -m http.server          # then open http://localhost:8000
+node test/auto-solve.mjs        # verify every level + check pars
+node test/auto-solve.mjs twins  # solve just levels matching a name
 ```
 
 | File | What it is |
 | --- | --- |
-| `src/engine.js` | Pure simulation core (physics, phasing, win/death). DOM-free, shared with tests. |
+| `src/engine.js` | Pure simulation core (physics, phasing, win/death). DOM-free, shared with tooling. |
 | `src/levels.js` | Level data (ASCII grids). |
 | `src/game.js` | Rendering, input, screens, particles, saves. |
 | `src/audio.js` | Tiny WebAudio synth — no sound assets. |
-| `test/solve.mjs` | Headless solvability proof for every level. |
+| `src/solver.js` | Search solver: proves solvability, computes minimum-press par. |
+| `test/auto-solve.mjs` | Runs the solver over every level as the verification gate. |

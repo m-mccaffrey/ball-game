@@ -132,7 +132,7 @@ export const LEVELS = [
   {
     name: 'Twins',
     hint: 'Collect both sparks. Mind the pit on the way.',
-    par: 3,
+    par: 2,
     grid: [
       '........................',
       '.......................b',
@@ -270,7 +270,7 @@ export const LEVELS = [
   {
     name: 'Loop-de-Loop',
     hint: 'Ride the loop. The green spark is a ghost — time it.',
-    par: 4,
+    par: 2,
     grid: [
       '...........b............',
       '........................',
