@@ -1,6 +1,6 @@
 // game.js — rendering, input, screens and juice for Hueball.
 import {
-  TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS, BUMPER_R,
+  TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS, BUMPER_R, JET_LEN,
   parseLevel, createState, step, setPhase, resetBall, starsFor, charAt,
 } from './engine.js';
 import { LEVELS } from './levels.js';
@@ -8,6 +8,8 @@ import * as sfx from './audio.js';
 
 const PALETTE = { m: '#ec4899', y: '#facc15', g: '#4ade80', c: '#38bdf8' };
 const COLOR_NAMES = { m: 'magenta', y: 'yellow', g: 'green', c: 'cyan' };
+const INVERSE_CHAR = { m: '1', y: '2', g: '3', c: '4' }; // inverse-block tile per color
+const JET_TINT = '#bae6fd';
 const NEUTRAL = '#3a4054';
 const NEUTRAL_EDGE = '#5b6480';
 const HAZARD = '#ef4444';
@@ -42,6 +44,7 @@ let state = createState(level);
 let layers = null;            // baked per-color canvases
 let screen = 'menu';          // 'menu' | 'play' | 'complete'
 let phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
+let invAlpha = { m: 0.22, y: 0.22, g: 0.22, c: 0.22 };
 let tintAlpha = 0;
 let tintColor = PALETTE.m;
 let bgCur = { ...BG_RGB };    // animated background color (dissolve effect)
@@ -144,14 +147,45 @@ function bakeHazards(lv) {
   return cv;
 }
 
+// Inverse blocks read as hollow, hatched "phantom" tiles so they're never
+// confused with solid colored blocks. Their alpha is animated inversely.
+function bakeInverseLayer(lv, ch, color) {
+  const cv = document.createElement('canvas');
+  cv.width = lv.width;
+  cv.height = lv.height;
+  const g = cv.getContext('2d');
+  for (let r = 0; r < lv.rows; r++) {
+    for (let c = 0; c < lv.cols; c++) {
+      if (lv.tiles[r][c] !== ch) continue;
+      const x = c * TILE, y = r * TILE;
+      g.fillStyle = color;
+      g.globalAlpha = 0.18;
+      g.fillRect(x + 2, y + 2, TILE - 4, TILE - 4);
+      g.globalAlpha = 0.7;
+      g.strokeStyle = color;
+      g.lineWidth = 2;
+      g.strokeRect(x + 3, y + 3, TILE - 6, TILE - 6);
+      g.beginPath(); // diagonal hatch
+      g.moveTo(x + 6, y + TILE - 6); g.lineTo(x + TILE - 6, y + 6);
+      g.moveTo(x + 14, y + TILE - 6); g.lineTo(x + TILE - 6, y + 14);
+      g.moveTo(x + 6, y + TILE - 14); g.lineTo(x + TILE - 14, y + 6);
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+  }
+  return cv;
+}
+
 function bakeAll(lv) {
   const out = {
     neutral: bakeLayer(lv, ch => ch === '#' || ch === '/' || ch === '\\', NEUTRAL, NEUTRAL_EDGE),
     hazards: bakeHazards(lv),
     colors: {},
+    inverse: {},
   };
   for (const col of PHASE_COLORS) {
     out.colors[col] = bakeLayer(lv, ch => ch === col, PALETTE[col], 'rgba(255,255,255,0.45)');
+    out.inverse[col] = bakeInverseLayer(lv, INVERSE_CHAR[col], PALETTE[col]);
   }
   return out;
 }
@@ -210,6 +244,7 @@ function loadLevel(i, fresh = true) {
   winTimer = 0;
   hintTimer = 0;
   phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
+  invAlpha = { m: 0.22, y: 0.22, g: 0.22, c: 0.22 };
   if (fresh) {
     $('hud-name').textContent = `${levelIndex + 1}. ${level.name}`;
     hintEl.textContent = level.hint;
@@ -394,6 +429,9 @@ function update(dt) {
   for (const col of PHASE_COLORS) {
     const goal = state.phased === col ? 0.06 : 1;
     phaseAlpha[col] += (goal - phaseAlpha[col]) * Math.min(1, dt * 10);
+    // Inverse blocks do the opposite: vivid while phased, faint hint otherwise.
+    const ig = state.phased === col ? 1 : 0.22;
+    invAlpha[col] += (ig - invAlpha[col]) * Math.min(1, dt * 10);
   }
   const mixRgb = state.phased ? PALETTE_RGB[state.phased] : BG_RGB;
   const mix = state.phased ? DISSOLVE_MIX : 0;
@@ -457,11 +495,19 @@ function draw(now) {
         ctx.drawImage(layers.colors[col], 0, 0);
         ctx.globalAlpha = 1;
       }
+      ctx.globalAlpha = invAlpha[col];
+      ctx.drawImage(layers.inverse[col], 0, 0);
+      ctx.globalAlpha = 1;
     }
     ctx.drawImage(layers.hazards, 0, 0);
   }
 
   const t = now / 1000;
+
+  // jets — translucent stream with chevrons drifting in the push direction
+  for (const jet of level.jets) {
+    drawJet(jet, t);
+  }
 
   // bumpers
   for (const bp of level.bumpers) {
@@ -552,6 +598,50 @@ function draw(now) {
   ctx.arc(0, 0, BALL_R, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+function drawJet(jet, t) {
+  const { x: dx, y: dy } = jet.dir;
+  // Stream reaches JET_LEN tiles or until a neutral wall (matches the engine).
+  let len = 1;
+  for (let i = 1; i < JET_LEN; i++) {
+    const ch = charAt(level, jet.r + dy * i, jet.c + dx * i);
+    if (ch === '#' || ch === '/' || ch === '\\') break;
+    len = i + 1;
+  }
+  const cx = jet.c * TILE, cy = jet.r * TILE;
+  const ex = cx + dx * len * TILE, ey = cy + dy * len * TILE;
+  const gx0 = cx + TILE / 2, gy0 = cy + TILE / 2;
+  const gx1 = ex + TILE / 2 - dx * TILE, gy1 = ey + TILE / 2 - dy * TILE;
+  const grad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+  grad.addColorStop(0, 'rgba(186,230,253,0.22)');
+  grad.addColorStop(1, 'rgba(186,230,253,0)');
+  ctx.fillStyle = grad;
+  const w = TILE - 8;
+  if (dx) ctx.fillRect(Math.min(cx, ex) + 4, cy + 4, Math.abs(ex - cx) || w, w);
+  else ctx.fillRect(cx + 4, Math.min(cy, ey) + 4, w, Math.abs(ey - cy) || w);
+
+  // drifting chevrons
+  ctx.strokeStyle = JET_TINT;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  const ang = Math.atan2(dy, dx);
+  const span = len * TILE;
+  const drift = (t * 120) % TILE;
+  for (let i = 0; i < len; i++) {
+    const s = (i * TILE + drift) % span;        // distance along the stream
+    const px = gx0 + dx * s;
+    const py = gy0 + dy * s;
+    ctx.globalAlpha = 0.7 * (1 - s / span);     // fade toward the far end
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    ctx.beginPath();                            // chevron pointing along the jet
+    ctx.moveTo(-7, -7); ctx.lineTo(0, 0); ctx.lineTo(-7, 7);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawPortal(p, color, spin) {

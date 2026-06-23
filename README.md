@@ -47,7 +47,9 @@ now plain ASCII art in [`src/levels.js`](src/levels.js) — a 24×16 grid of 40p
 ```
 .   empty                 #   solid neutral block
 /   ramp rising right     \   ramp falling right
-m y g c                   phaseable colored blocks
+m y g c                   phaseable colored blocks (vanish while their color is phased)
+1 2 3 4                   inverse blocks (appear only while m/y/g/c is phased)
+^ < >                     jets — push the ball up / left / right
 x   spikes (resets the ball)
 o   bumper (launches the ball)
 @   portal in             &   portal out (one-way, one pair max)

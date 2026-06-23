@@ -1,6 +1,6 @@
 // engine.js — pure simulation core for Hueball.
 // No DOM access: the same code runs in the browser and in the headless
-// solvability tests under node (test/solve.mjs).
+// solver/verification tooling under node (src/solver.js, test/auto-solve.mjs).
 
 export const TILE = 40;
 export const BALL_R = 10;
@@ -14,13 +14,25 @@ export const COLLECT_RADIUS = 24;
 export const BUMPER_R = 15;
 export const BUMPER_SPEED = 560;
 export const PORTAL_R = 20;
+export const JET_ACCEL = 4200;     // force jets apply along their direction
+export const JET_MAX = 760;        // terminal speed a jet drives the ball to
+export const JET_LEN = 7;          // how many tiles a jet stream reaches
 export const PHASE_COLORS = ['m', 'y', 'g', 'c'];
+
+// Inverse ("phantom") blocks: solid ONLY while their color is phased — the
+// opposite of a normal colored block. Keyed by the same number as the color's
+// keyboard button (1=m, 2=y, 3=g, 4=c).
+const INVERSE = { '1': 'm', '2': 'y', '3': 'g', '4': 'c' };
+const INVERSE_CHAR = { m: '1', y: '2', g: '3', c: '4' };
+const JETS = { '^': { x: 0, y: -1 }, '<': { x: -1, y: 0 }, '>': { x: 1, y: 0 } };
 
 // Grid legend:
 //   .  empty            #  solid neutral block
 //   /  neutral ramp rising to the right (solid lower-right triangle)
 //   \  neutral ramp falling to the right (solid lower-left triangle)
-//   m y g c  phaseable colored blocks
+//   m y g c  phaseable colored blocks (vanish while their color is phased)
+//   1 2 3 4  inverse blocks (appear only while m/y/g/c is phased)
+//   ^ < >    jets — push the ball up / left / right
 //   x  hazard (spikes) — touching it resets the ball
 //   o  bumper — launches the ball away at high speed
 //   @  portal entrance   &  portal exit (one-way; at most one pair)
@@ -28,6 +40,7 @@ export const PHASE_COLORS = ['m', 'y', 'g', 'c'];
 //   M Y G C  ghost sparks — collectible only while that color is phased
 
 const GHOST_TARGETS = { M: 'm', Y: 'y', G: 'g', C: 'c' };
+const VALID_TILES = '.#/\\xmygc1234^<>';
 
 export function parseLevel(def, index = 0) {
   const rows = def.grid.length;
@@ -36,6 +49,7 @@ export function parseLevel(def, index = 0) {
   let spawn = null;
   const targets = [];
   const bumpers = [];
+  const jets = [];
   let portalIn = null, portalOut = null;
   for (let r = 0; r < rows; r++) {
     if (def.grid[r].length !== cols) {
@@ -65,7 +79,9 @@ export function parseLevel(def, index = 0) {
         if (portalOut) throw new Error(`Level "${def.name}" has multiple portal exits`);
         portalOut = { x: cx, y: cy };
         line[c] = '.';
-      } else if (!'.#/\\xmygc'.includes(ch)) {
+      } else if (JETS[ch]) {
+        jets.push({ r, c, x: cx, y: cy, dir: JETS[ch] });
+      } else if (!VALID_TILES.includes(ch)) {
         throw new Error(`Level "${def.name}" has unknown tile '${ch}' at ${r},${c}`);
       }
     }
@@ -79,7 +95,7 @@ export function parseLevel(def, index = 0) {
     name: def.name,
     hint: def.hint || '',
     par: def.par || 1,
-    rows, cols, tiles, spawn, targets, bumpers, portalIn, portalOut,
+    rows, cols, tiles, spawn, targets, bumpers, jets, portalIn, portalOut,
     width: cols * TILE,
     height: rows * TILE,
   };
@@ -108,6 +124,7 @@ export function charAt(level, r, c) {
 export function isSolid(ch, phased) {
   if (ch === '#' || ch === '/' || ch === '\\' || ch === 'x') return true;
   if (ch === 'm' || ch === 'y' || ch === 'g' || ch === 'c') return ch !== phased;
+  if (INVERSE[ch]) return INVERSE[ch] === phased; // inverse: solid only when phased
   return false;
 }
 
@@ -155,15 +172,16 @@ function overlapsTile(level, state, r, c, margin) {
   return !!circlePoly(state.ball.x, state.ball.y, BALL_R + margin, tileVerts(ch, r, c));
 }
 
-// When a color becomes solid again, any of its tiles still overlapping the
-// ball stay intangible until the ball rolls clear — it never crushes you.
-function markGhosts(state, level, color) {
+// When tiles become solid, any still overlapping the ball stay intangible
+// until the ball rolls clear — phasing never crushes you. `chars` lists the
+// tile characters that just turned solid.
+function markGhosts(state, level, chars) {
   const b = state.ball;
   const c0 = Math.floor((b.x - BALL_R - 2) / TILE), c1 = Math.floor((b.x + BALL_R + 2) / TILE);
   const r0 = Math.floor((b.y - BALL_R - 2) / TILE), r1 = Math.floor((b.y + BALL_R + 2) / TILE);
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
-      if (charAt(level, r, c) === color && overlapsTile(level, state, r, c, 2)) {
+      if (chars.includes(charAt(level, r, c)) && overlapsTile(level, state, r, c, 2)) {
         state.ghost.add(r + ',' + c);
       }
     }
@@ -175,7 +193,12 @@ export function setPhase(state, level, color) {
   if (state.won || !PHASE_COLORS.includes(color)) return false;
   const prev = state.phased;
   state.phased = prev === color ? null : color;
-  if (prev && prev !== state.phased) markGhosts(state, level, prev);
+  // Restoring the old color re-solidifies its normal blocks; activating the
+  // new color makes that color's inverse blocks appear. Ghost either set.
+  const turnedSolid = [];
+  if (prev && prev !== state.phased) turnedSolid.push(prev);
+  if (state.phased) turnedSolid.push(INVERSE_CHAR[state.phased]);
+  if (turnedSolid.length) markGhosts(state, level, turnedSolid);
   state.switches++;
   return true;
 }
@@ -215,6 +238,30 @@ export function step(state, level, dt) {
     const a = MAGNET_PULL * (1 - nd / MAGNET_RADIUS);
     b.vx += a * (nearest.x - b.x) / nd * dt;
     b.vy += a * (nearest.y - b.y) / nd * dt;
+  }
+
+  // Jets: a stream of force in the jet's direction, reaching JET_LEN tiles
+  // (or until a neutral wall). Drives the ball toward JET_MAX along the axis.
+  for (const jet of level.jets) {
+    const { x: dx, y: dy } = jet.dir;
+    let inStream = false;
+    for (let i = 0; i < JET_LEN; i++) {
+      const rr = jet.r + dy * i, cc = jet.c + dx * i;
+      const ch = charAt(level, rr, cc);
+      if (i > 0 && (ch === '#' || ch === '/' || ch === '\\')) break; // wall stops the stream
+      const sx = (cc + 0.5) * TILE, sy = (rr + 0.5) * TILE;
+      if (Math.abs(b.x - sx) < TILE / 2 + BALL_R && Math.abs(b.y - sy) < TILE / 2 + BALL_R) {
+        inStream = true;
+        break;
+      }
+    }
+    if (inStream) {
+      const along = b.vx * dx + b.vy * dy;
+      if (along < JET_MAX) {
+        b.vx += dx * JET_ACCEL * dt;
+        b.vy += dy * JET_ACCEL * dt;
+      }
+    }
   }
 
   b.vy += GRAVITY * dt;
