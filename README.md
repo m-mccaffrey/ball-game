@@ -75,8 +75,11 @@ difficulty (press count) and is the verification half of the procedural generato
 
 ## Procedural generation
 
-`src/generator.js` emits parametric layouts (currently `gauntlet` and `layered`
-archetypes); `tools/generate.mjs` runs them through a funnel and keeps only the good ones:
+`src/generator.js` emits parametric layouts across four archetypes — `gauntlet`
+(roll past walls and inverse bridges), `portalroute` (cap-chute into a sealed
+portal chamber), `jetloft` (clear a wall, ride a jet through a roof), and `layered`
+(drop through colored floors). `tools/generate.mjs` runs them through a funnel and
+keeps only the good ones:
 
 ```sh
 node tools/generate.mjs --want 12 --seed 7   # writes survivors to tools/generated.mjs
@@ -89,6 +92,13 @@ color permutation). What survives is solvable, non-trivial, clean, and distinct 
 human curates the keepers into a world. The `Generated Gauntlet` levels (Twin Gates →
 The Long Way) were produced this way. Adding archetypes widens the space the generator can
 explore; the solver verifies whatever they emit, so new mechanics cost nothing to support.
+
+Two dedup notes worth knowing: combinatorial archetypes (gauntlet) use a *canonical*
+signature (colors relabeled by first appearance) so color-permutation clones collapse;
+set-piece archetypes (jetloft, portalroute) vary mainly by color and position, so those
+stay in the signature. Each new archetype should also be **solvable by construction** —
+the gauntlet uses only walls + inverse bridges, portalroute drops into a sealed chamber —
+which keeps the unsolvable-reject rate near zero.
 
 ## Development
 

@@ -123,7 +123,86 @@ function genGauntlet(rng) {
   return { grid: stringify(g), archetype: 'gauntlet', sig: makeSig('gauntlet', obs) };
 }
 
-const ARCHETYPES = [genGauntlet, genGauntlet, genGauntlet, genGauntlet, genLayered];
+// ---- Archetype: jetloft (jets) -----------------------------------------
+// Ball rolls in, clears an approach wall, then a jet bank lofts it up onto a
+// ledge. The landing is gated either by a roof to open (normal block) or by a
+// pad to conjure (inverse block). Geometry hugs the hand-proven Fountain arc.
+function genJetLoft(rng) {
+  const g = blank();
+  for (let c = 0; c < 19; c++) g[14][c] = '#';
+  for (let c = 0; c < COLS; c++) g[15][c] = '#';
+  g[8][1] = 'b';
+  g[9][1] = '\\';
+
+  const [wallColor, gateColor] = distinctColors(rng, 2);
+  // approach wall (rolls into it before the jets)
+  const wallCol = randint(rng, 4, 5);
+  g[12][wallCol] = wallColor; g[13][wallCol] = wallColor;
+
+  // jet bank
+  const js = randint(rng, 7, 8);
+  for (let c = js; c < js + 4; c++) g[13][c] = '^';
+
+  // landing ledge + gate
+  const ls = randint(rng, 13, 14);
+  const roof = rng() < 0.5;
+  const mid = ls + 2;
+  if (roof) {
+    for (let c = ls; c < ls + 4; c++) g[3][c] = gateColor;     // roof to open
+    for (let c = ls; c < ls + 6 && c < COLS; c++) g[5][c] = '#'; // solid ledge
+    g[4][mid] = 't';
+  } else {
+    for (let c = ls; c < ls + 6 && c < COLS; c++) {            // pad to conjure
+      g[5][c] = INV_OF[gateColor];
+      g[6][c] = 'x';
+    }
+    g[4][mid] = 't';
+  }
+  // Set-piece archetypes vary mainly by color + position (not structure), so
+  // their signatures keep the actual colors and a coarse layout fingerprint.
+  const sig = `jetloft:${roof ? 'R' : 'P'}:${wallColor}${gateColor}:j${js}l${ls}`;
+  return { grid: stringify(g), archetype: 'jetloft', sig };
+}
+
+// ---- Archetype: portalroute (portals) ----------------------------------
+// A vertical cap-chute: the ball drops through a stack of colored caps (phase
+// each to fall to the next), into a portal that delivers it to a sealed
+// chamber the target sits in — reachable no other way. Deterministic and
+// reliable: portals catch a falling ball cleanly and preserve velocity.
+function genPortalRoute(rng) {
+  const g = blank();
+  for (let c = 0; c < COLS; c++) g[15][c] = '#';
+  const S = randint(rng, 5, 7);   // chute column
+  g[1][S] = 'b';
+
+  const nCaps = randint(rng, 2, 3);
+  const caps = distinctColors(rng, nCaps);
+  let row = 4;
+  for (let i = 0; i < nCaps; i++) {
+    for (let c = S - 1; c <= S + 1; c++) g[row][c] = caps[i];
+    row += 2;
+  }
+  g[row][S] = '@';                // portal entrance below the last cap
+
+  // sealed target chamber on the right — only the portal reaches it
+  const cc = randint(rng, 15, 18);
+  for (let r = 2; r <= 11; r++) { g[r][cc - 2] = '#'; g[r][cc + 2] = '#'; }
+  for (let c = cc - 2; c <= cc + 2; c++) g[11][c] = '#';
+  g[3][cc] = '&';
+  g[10][cc] = 't';
+
+  const sig = `portalroute:${caps.join('')}:cc${cc}`;
+  return { grid: stringify(g), archetype: 'portalroute', sig };
+}
+
+export const ARCH = { gauntlet: genGauntlet, layered: genLayered, jetloft: genJetLoft, portalroute: genPortalRoute };
+
+const ARCHETYPES = [
+  genGauntlet, genGauntlet,
+  genPortalRoute, genPortalRoute,
+  genJetLoft, genJetLoft, genJetLoft,
+  genLayered,
+];
 
 export function generateLevel(rng) {
   return pick(rng, ARCHETYPES)(rng);
