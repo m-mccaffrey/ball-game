@@ -8,20 +8,25 @@
 
 ## How to play
 
-A ball falls under gravity through a world built from four colors. Press a color
-(**1 2 3 4**, **A S D F**, **J K L ;**, or tap the buttons) to **phase every block of
-that color out of existence** — the ball drops straight through them. Press it again to
-bring it back. Only one color can be phased at a time: picking a new color snaps the
-previous one back, even if the ball is counting on it.
+Hueball is **chromatic golf**. A ball falls under gravity through a world built from
+four colors. Press a color (**1 2 3 4**, **A S D F**, **J K L ;**, or tap the buttons)
+to **phase every block of that color out of existence** — the ball drops straight
+through them. Press it again to bring it back. Only one color can be phased at a time:
+picking a new color snaps the previous one back, even if the ball is counting on it.
 
-Guide the ball to every **spark ◎** to clear the level. Avoid spikes, don't fall
-off the world, and watch for colors that do two jobs at once. Later levels add
-**bumpers** that launch the ball, one-way **portals**, and colored **ghost sparks**
-that only exist while their color is phased. **R** (or Space) resets the ball,
-**Esc** opens the level select.
+**Time only moves when you let it.** Levels start paused; **Space** (or tapping the
+field) runs and pauses the world, and color switches work while frozen. While paused
+you see the ball's momentum arrow and a short preview of its path — toggle a color and
+watch the preview change before you commit. It's a puzzle you line up like a putt, not
+a reflex test.
 
-Each level has a **par** — clear it within par switches and without dying for ★★★.
-Progress and stars are saved locally.
+Guide the ball to every **spark ◎** to clear the hole. Every color switch is a
+**stroke**; spikes and falling off the world cost a penalty stroke and return the ball
+to the tee (collected sparks stay collected). Beat **par** for ★★★. Mechanics along the
+way: colors that do two jobs at once, **bumpers**, one-way **portals**, colored
+**ghost sparks** that only exist while their color is phased, **inverse blocks** that
+only exist while phased, and **jets**. **R** restarts the hole, **Esc** opens the level
+select. Progress and stars are saved locally.
 
 ## The rebuild
 

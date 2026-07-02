@@ -16,7 +16,7 @@
 export const LEVELS = [
   {
     name: 'Layer Cake',
-    hint: 'Tap a color to phase it away. Tap it again to bring it back.',
+    hint: 'Tap a color to phase it away — it works even while paused.',
     par: 4,
     grid: [
       '........................',

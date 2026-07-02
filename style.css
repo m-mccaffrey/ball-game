@@ -75,6 +75,23 @@ html, body {
   display: block;
 }
 
+#pause-chip {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(13, 15, 24, 0.82);
+  border: 1px solid #2a3050;
+  color: var(--dim);
+  font-size: 13.5px;
+  padding: 7px 16px;
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: floatIn 0.4s ease-out;
+}
+#pause-chip b { color: var(--text); }
+
 #hint {
   position: absolute;
   top: 10px;

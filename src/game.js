@@ -1,7 +1,8 @@
 // game.js — rendering, input, screens and juice for Hueball.
 import {
   TILE, BALL_R, PHASE_COLORS, COLLECT_RADIUS, BUMPER_R, JET_LEN,
-  parseLevel, createState, step, setPhase, resetBall, starsFor, charAt,
+  parseLevel, createState, cloneState, step, setPhase, resetBall,
+  starsFor, strokesFor, charAt,
 } from './engine.js';
 import { LEVELS } from './levels.js';
 import * as sfx from './audio.js';
@@ -55,6 +56,7 @@ let particles = [];
 let trail = [];
 let squash = 0;
 let hintTimer = 0;
+let running = false;          // golf model: levels start paused for planning
 
 let save = { unlocked: 0, stars: {}, best: {} };
 try {
@@ -229,8 +231,22 @@ function manualReset() {
   if (screen !== 'play') return;
   resetBall(state, level, false);
   trail = [];
+  setRunning(false);
   updateColorbar();
   updateHud();
+  sfx.playClick();
+}
+
+function setRunning(on) {
+  running = on;
+  const chip = $('pause-chip');
+  show(chip, !on && screen === 'play' && !state.won);
+  $('btn-pause').textContent = on ? '⏸' : '▶';
+}
+
+function togglePause() {
+  if (screen !== 'play' || state.won) return;
+  setRunning(!running);
   sfx.playClick();
 }
 
@@ -261,10 +277,12 @@ function startLevel(i) {
   show(completeEl, false);
   show(hud, true);
   show(colorbar, true);
+  setRunning(false); // start paused: read the level, then press Space
 }
 
 function openMenu() {
   screen = 'menu';
+  setRunning(false);
   buildLevelGrid();
   show(menuEl, true);
   show(completeEl, false);
@@ -282,13 +300,17 @@ function completeLevel() {
   const isRecord = prevBest === undefined || state.time < prevBest;
   if (isRecord) save.best[levelIndex] = Math.round(state.time * 10) / 10;
   persist();
+  const strokes = strokesFor(state);
+  const diff = strokes - level.par;
+  const golf = diff < -1 ? 'an eagle!' : diff === -1 ? 'a birdie!' : diff === 0 ? 'par ✓'
+    : diff === 1 ? 'a bogey' : `+${diff}`;
   $('complete-title').textContent = level.name;
   $('complete-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
   $('complete-stats').textContent =
-    `${state.switches} switch${state.switches === 1 ? '' : 'es'} (par ${level.par})` +
+    `${strokes} stroke${strokes === 1 ? '' : 's'} (par ${level.par}) — ${golf}` +
+    (state.deaths ? ` · incl. ${state.deaths} penalt${state.deaths === 1 ? 'y' : 'ies'}` : '') +
     ` · ${state.time.toFixed(1)}s` +
-    (isRecord && prevBest !== undefined ? ' — new record!' : prevBest !== undefined ? ` (best ${prevBest.toFixed(1)}s)` : '') +
-    (state.deaths ? ` · ${state.deaths} reset${state.deaths === 1 ? '' : 's'}` : ' · flawless');
+    (isRecord && prevBest !== undefined ? ' — new record!' : prevBest !== undefined ? ` (best ${prevBest.toFixed(1)}s)` : '');
   const last = levelIndex >= levels.length - 1;
   $('btn-next').textContent = last ? 'Back to levels' : 'Next level →';
   show(completeEl, true);
@@ -303,7 +325,7 @@ function updateColorbar() {
 }
 
 function updateHud() {
-  $('hud-stats').textContent = `⦾ ${state.switches}`;
+  $('hud-stats').textContent = `⛳ ${strokesFor(state)} · par ${level.par}`;
 }
 
 function buildLevelGrid() {
@@ -336,10 +358,15 @@ window.addEventListener('keydown', e => {
   sfx.unlock();
   const k = e.key.toLowerCase();
   if (KEY_COLOR[k]) { press(KEY_COLOR[k]); e.preventDefault(); }
-  else if (k === 'r' || k === ' ') { manualReset(); e.preventDefault(); }
+  else if (k === ' ') { togglePause(); e.preventDefault(); }
+  else if (k === 'r') { manualReset(); e.preventDefault(); }
   else if (k === 'escape') { if (screen === 'play' || screen === 'complete') openMenu(); }
   else if (k === 'n' && screen === 'complete') $('btn-next').click();
 });
+
+// Tapping the play field is the mobile-friendly run/pause toggle.
+canvas.addEventListener('pointerdown', () => { sfx.unlock(); togglePause(); });
+$('btn-pause').addEventListener('click', () => { sfx.unlock(); togglePause(); });
 
 for (const btn of colorbar.querySelectorAll('.color-btn')) {
   btn.style.setProperty('--c', PALETTE[btn.dataset.color]);
@@ -396,6 +423,7 @@ function handleEvents(events) {
       shake = 14;
       spawnBurst(e.x, Math.min(e.y, level.height), '#f8fafc', 24, 380, 0.8);
       trail = [];
+      setRunning(false); // back at the tee: pause for a re-plan
       updateColorbar();
       updateHud();
     } else if (e.type === 'win') {
@@ -408,7 +436,7 @@ function handleEvents(events) {
 
 function update(dt) {
   if (screen === 'play' || screen === 'complete') {
-    if (!state.won) {
+    if (!state.won && running) {
       acc += dt;
       acc = Math.min(acc, 0.1);
       while (acc >= SIM_DT) {
@@ -417,7 +445,7 @@ function update(dt) {
       }
       trail.push({ x: state.ball.x, y: state.ball.y });
       if (trail.length > 16) trail.shift();
-    } else if (screen === 'play') {
+    } else if (state.won && screen === 'play') {
       winTimer -= dt;
       if (winTimer <= 0) completeLevel();
     }
@@ -585,6 +613,11 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
 
+  // paused planning aids: short simulated trajectory + momentum arrow
+  if (!running && screen === 'play' && !state.won) {
+    drawPlanningAids(t);
+  }
+
   // ball (with bounce squash)
   const b = state.ball;
   ctx.save();
@@ -598,6 +631,63 @@ function draw(now) {
   ctx.arc(0, 0, BALL_R, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+// While paused, show where the ball is headed: a momentum arrow plus a short
+// stretch of *real* simulated path (recomputed live, so toggling a color
+// while paused immediately shows the new outcome). Kept short on purpose —
+// it aids planning without solving the level for you.
+function drawPlanningAids(t) {
+  const b = state.ball;
+
+  // ~0.45s of honest future, sampled from a cloned state
+  const ghost = cloneState(state);
+  const pts = [];
+  for (let i = 0; i < 108; i++) {
+    const evs = step(ghost, level, SIM_DT);
+    if (i % 9 === 8) pts.push({ x: ghost.ball.x, y: ghost.ball.y });
+    if (evs.some(e => e.type === 'death' || e.type === 'win')) break;
+  }
+  ctx.fillStyle = '#f8fafc';
+  pts.forEach((p, i) => {
+    ctx.globalAlpha = 0.4 * (1 - i / pts.length) + 0.08;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3 - 1.5 * (i / pts.length), 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  // momentum arrow (only when the ball is actually moving)
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > 30) {
+    const len = Math.min(90, 22 + sp * 0.055);
+    const nx = b.vx / sp, ny = b.vy / sp;
+    const tipX = b.x + nx * len, tipY = b.y + ny * len;
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(b.x + nx * (BALL_R + 3), b.y + ny * (BALL_R + 3));
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath(); // arrowhead
+    ctx.moveTo(tipX + nx * 8, tipY + ny * 8);
+    ctx.lineTo(tipX - ny * 4.5, tipY + nx * 4.5);
+    ctx.lineTo(tipX + ny * 4.5, tipY - nx * 4.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // soft "time is frozen" ring around the ball
+  ctx.strokeStyle = 'rgba(248,250,252,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 5]);
+  ctx.lineDashOffset = -t * 14;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BALL_R + 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
 }
 
 function drawJet(jet, t) {

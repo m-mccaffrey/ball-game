@@ -10,23 +10,9 @@
 // We prune any branch that kills the ball (a clean, par solution never dies)
 // and deduplicate physically-equivalent states. The first pressLimit that
 // yields a win is the minimum, because we try them in increasing order.
-import { createState, step, setPhase, PHASE_COLORS } from './engine.js';
+import { createState, cloneState, step, setPhase, PHASE_COLORS } from './engine.js';
 
 const TICK = 1 / 240; // must match the game's simulation step
-
-function cloneState(s) {
-  return {
-    ball: { x: s.ball.x, y: s.ball.y, vx: s.ball.vx, vy: s.ball.vy },
-    phased: s.phased,
-    ghost: new Set(s.ghost),
-    targets: s.targets.map(t => ({ x: t.x, y: t.y, color: t.color, collected: t.collected })),
-    portalCd: s.portalCd,
-    time: s.time,
-    switches: s.switches,
-    deaths: s.deaths,
-    won: s.won,
-  };
-}
 
 function collectedMask(s) {
   let m = 0;

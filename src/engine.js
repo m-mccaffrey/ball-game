@@ -115,6 +115,23 @@ export function createState(level) {
   };
 }
 
+// Deep-copy a state (used by the solver's search and the paused-trajectory
+// preview in the game — both step a copy without disturbing the live state).
+export function cloneState(s) {
+  return {
+    ball: { x: s.ball.x, y: s.ball.y, vx: s.ball.vx, vy: s.ball.vy },
+    phased: s.phased,
+    ghost: new Set(s.ghost),
+    targets: s.targets.map(t => ({ x: t.x, y: t.y, color: t.color, collected: t.collected })),
+    portalCd: s.portalCd,
+    time: s.time,
+    switches: s.switches,
+    deaths: s.deaths,
+    won: s.won,
+    rampT: s.rampT,
+  };
+}
+
 export function charAt(level, r, c) {
   if (c < 0 || c >= level.cols || r < 0) return '#'; // walls + ceiling
   if (r >= level.rows) return '.';                   // the bottom is open
@@ -211,9 +228,27 @@ export function resetBall(state, level, countDeath) {
   state.phased = null;
   state.ghost.clear();
   state.portalCd = 0;
-  for (const t of state.targets) t.collected = false;
-  if (countDeath) state.deaths++;
-  else { state.switches = 0; state.time = 0; }
+  if (countDeath) {
+    // Golf model: a death costs a stroke and a trip back to the tee, but
+    // collected sparks stay collected — no replaying earned progress.
+    state.deaths++;
+  } else {
+    for (const t of state.targets) t.collected = false;
+    state.switches = 0;
+    state.time = 0;
+  }
+}
+
+// Golf scoring: strokes = color switches + death penalties.
+export function strokesFor(state) {
+  return state.switches + state.deaths;
+}
+
+export function starsFor(level, state) {
+  const strokes = strokesFor(state);
+  if (strokes <= level.par) return 3;
+  if (strokes <= level.par + 2) return 2;
+  return 1;
 }
 
 // Advance the simulation by dt seconds. Call with a small fixed dt
@@ -371,10 +406,4 @@ export function step(state, level, dt) {
     events.push({ type: 'win' });
   }
   return events;
-}
-
-export function starsFor(level, state) {
-  if (state.deaths === 0 && state.switches <= level.par) return 3;
-  if (state.deaths <= 1 || state.switches <= level.par + 2) return 2;
-  return 1;
 }
