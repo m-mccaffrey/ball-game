@@ -368,13 +368,16 @@ export function step(state, level, dt) {
     events.push({ type: 'boing', x: bp.x + nx * BUMPER_R, y: bp.y + ny * BUMPER_R });
   }
 
-  // portal: one-way teleport, velocity preserved
+  // portal: one-way teleport. The exit drops the ball gently (velocity
+  // zeroed) so portals are calm, readable re-entries — not slingshots.
   state.portalCd = Math.max(0, state.portalCd - dt);
   if (level.portalIn && state.portalCd === 0 &&
       Math.hypot(b.x - level.portalIn.x, b.y - level.portalIn.y) < PORTAL_R) {
     events.push({ type: 'warp', from: { x: b.x, y: b.y }, to: level.portalOut });
     b.x = level.portalOut.x;
     b.y = level.portalOut.y;
+    b.vx = 0;
+    b.vy = 0;
     state.portalCd = 0.25;
   }
 
