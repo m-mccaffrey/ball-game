@@ -19,7 +19,7 @@ export const LEVELS = [
   // --- Training: one level per mechanic. -------------------------------
   {
     name: 'Layer Cake',
-    hint: 'Tap a color to phase it away — it works even while paused.',
+    hint: 'Place a wire of each color along the drop, then press run.',
     par: 4,
     grid: [
       '........................',
@@ -65,7 +65,7 @@ export const LEVELS = [
   },
   {
     name: 'Gatekeeper',
-    hint: 'One color, two jobs. Pausing to think is free.',
+    hint: 'One color, two jobs — you will need magenta twice.',
     par: 3,
     grid: [
       '........................',
@@ -157,33 +157,10 @@ export const LEVELS = [
   },
 
   // --- The Course: routing puzzles. -------------------------------------
-  // Structure: a yellow toll cap under the tee (the one-color-at-a-time rule
-  // makes every lap cost a fresh press of yellow), branching tube drops, and
-  // a recirculation portal that returns missed laps to the tee. Finishing is
-  // always possible; par is the insight.
-  {
-    name: 'Round Trip',
-    hint: 'The portal brings you home — but the yellow toll is due every lap.',
-    par: 4,
-    grid: [
-      '........................',
-      '...........b............',
-      '...........&............',
-      '..........yyy...........',
-      '........#..\\...t....#...',
-      '........#####gg##mm##...',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#t.##t.#....',
-      '............#..##..#....',
-      '............#\\.##\\.#....',
-      '..............\\...\\.....',
-      '....................@...',
-      '########################',
-    ],
-  },
+  // A recirculation portal returns the ball to the tee, so mistakes cost
+  // strokes, not progress. (Multi-lap levels that reuse the same path are on
+  // hold: under plan-then-run, wires fire by position, so repeat presses at
+  // one spot need laps that physically branch — a future redesign.)
   {
     name: 'Skeleton Key',
     hint: 'One color can open every door on the way down — if you let it.',
@@ -205,29 +182,6 @@ export const LEVELS = [
       '..............\\...\\.....',
       '...................t.@..',
       '########################',
-    ],
-  },
-  {
-    name: 'Interchange',
-    hint: 'The toll color is also the bridge color. Schedule your presses.',
-    par: 4,
-    grid: [
-      '........................',
-      '...........b............',
-      '...........&............',
-      '..........yyy...........',
-      '........#..\\........#...',
-      '........#####gg##mm##...',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#..##..#....',
-      '............#t.##t.#....',
-      '............#..##..#....',
-      '............#\\.##\\.#....',
-      '..............\\...\\.....',
-      '.................t...@..',
-      '################222#####',
     ],
   },
 ];

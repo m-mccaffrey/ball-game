@@ -56,7 +56,9 @@ let particles = [];
 let trail = [];
 let squash = 0;
 let hintTimer = 0;
-let running = false;          // golf model: levels start paused for planning
+let running = false;          // plan-then-run: false = planning, true = the run
+let triggers = [];            // color wires: {r, c, color, fired}
+let selectedColor = 'm';      // wire color the next canvas tap places
 
 let save = { unlocked: 0, stars: {}, best: {} };
 try {
@@ -217,23 +219,52 @@ function confetti() {
 }
 
 // -------------------------------------------------------------- control ---
+// Plan-then-run: color keys SELECT a wire color while planning; the world is
+// only influenced by wires the ball crosses during the run. No live input.
 function press(color) {
-  if (screen !== 'play' || state.won) return;
-  const was = state.phased;
-  if (!setPhase(state, level, color)) return;
-  sfx.playSwitch(color, state.phased === null);
-  tintColor = PALETTE[state.phased || was || color];
+  if (screen !== 'play' || state.won || running) return;
+  selectedColor = color;
   updateColorbar();
+  sfx.playClick();
+}
+
+function placeWire(r, c) {
+  if (r < 0 || c < 0 || r >= level.rows || c >= level.cols) return;
+  const i = triggers.findIndex(t => t.r === r && t.c === c);
+  if (i >= 0 && triggers[i].color === selectedColor) triggers.splice(i, 1);
+  else if (i >= 0) triggers[i].color = selectedColor;
+  else triggers.push({ r, c, color: selectedColor, fired: false });
+  sfx.playClick();
   updateHud();
 }
 
-function manualReset() {
-  if (screen !== 'play') return;
+function startRun() {
+  if (screen !== 'play' || state.won) return;
+  resetBall(state, level, false); // fresh run; death penalties persist
+  for (const t of triggers) t.fired = false;
+  trail = [];
+  setRunning(true);
+  sfx.playClick();
+}
+
+function stopRun() {
   resetBall(state, level, false);
+  for (const t of triggers) t.fired = false;
   trail = [];
   setRunning(false);
   updateColorbar();
   updateHud();
+}
+
+function toggleRun() {
+  if (screen !== 'play' || state.won) return;
+  running ? stopRun() : startRun();
+}
+
+function manualReset() {
+  if (screen !== 'play') return;
+  loadLevel(levelIndex); // full restart: wires, penalties, everything
+  setRunning(false);
   sfx.playClick();
 }
 
@@ -241,13 +272,9 @@ function setRunning(on) {
   running = on;
   const chip = $('pause-chip');
   show(chip, !on && screen === 'play' && !state.won);
-  $('btn-pause').textContent = on ? '⏸' : '▶';
-}
-
-function togglePause() {
-  if (screen !== 'play' || state.won) return;
-  setRunning(!running);
-  sfx.playClick();
+  $('btn-pause').textContent = on ? '⏹' : '▶';
+  updateColorbar();
+  updateHud();
 }
 
 function loadLevel(i, fresh = true) {
@@ -257,6 +284,8 @@ function loadLevel(i, fresh = true) {
   layers = bakeAll(level);
   trail = [];
   particles = [];
+  triggers = [];
+  selectedColor = 'm';
   winTimer = 0;
   hintTimer = 0;
   phaseAlpha = { m: 1, y: 1, g: 1, c: 1 };
@@ -320,12 +349,19 @@ function completeLevel() {
 // ----------------------------------------------------------------- HUD ----
 function updateColorbar() {
   for (const btn of colorbar.querySelectorAll('.color-btn')) {
-    btn.classList.toggle('phased', state.phased === btn.dataset.color);
+    btn.classList.toggle('phased', running && state.phased === btn.dataset.color);
+    btn.classList.toggle('selected', !running && selectedColor === btn.dataset.color);
   }
 }
 
 function updateHud() {
-  $('hud-stats').textContent = `⛳ ${strokesFor(state)} · par ${level.par}`;
+  if (running || state.won) {
+    $('hud-stats').textContent = `⛳ ${strokesFor(state)} · par ${level.par}`;
+  } else {
+    const n = triggers.length;
+    const pen = state.deaths ? ` · +${state.deaths} penalty` : '';
+    $('hud-stats').textContent = `⛳ plan: ${n} wire${n === 1 ? '' : 's'}${pen} · par ${level.par}`;
+  }
 }
 
 function buildLevelGrid() {
@@ -358,15 +394,22 @@ window.addEventListener('keydown', e => {
   sfx.unlock();
   const k = e.key.toLowerCase();
   if (KEY_COLOR[k]) { press(KEY_COLOR[k]); e.preventDefault(); }
-  else if (k === ' ') { togglePause(); e.preventDefault(); }
+  else if (k === ' ') { toggleRun(); e.preventDefault(); }
   else if (k === 'r') { manualReset(); e.preventDefault(); }
   else if (k === 'escape') { if (screen === 'play' || screen === 'complete') openMenu(); }
   else if (k === 'n' && screen === 'complete') $('btn-next').click();
 });
 
-// Tapping the play field is the mobile-friendly run/pause toggle.
-canvas.addEventListener('pointerdown', () => { sfx.unlock(); togglePause(); });
-$('btn-pause').addEventListener('click', () => { sfx.unlock(); togglePause(); });
+// Tapping the course while planning places/edits a wire.
+canvas.addEventListener('pointerdown', e => {
+  sfx.unlock();
+  if (screen !== 'play' || running || state.won) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) / rect.width * level.width;
+  const y = (e.clientY - rect.top) / rect.height * level.height;
+  placeWire(Math.floor(y / TILE), Math.floor(x / TILE));
+});
+$('btn-pause').addEventListener('click', () => { sfx.unlock(); toggleRun(); });
 
 for (const btn of colorbar.querySelectorAll('.color-btn')) {
   btn.style.setProperty('--c', PALETTE[btn.dataset.color]);
@@ -434,6 +477,25 @@ function handleEvents(events) {
   }
 }
 
+// A wire fires when the ball's center enters its tile (once per run). It
+// behaves exactly like pressing that color at that moment.
+function fireWires(st, wires, live) {
+  const r = Math.floor(st.ball.y / TILE);
+  const c = Math.floor(st.ball.x / TILE);
+  for (const t of wires) {
+    if (t.fired || t.r !== r || t.c !== c) continue;
+    t.fired = true;
+    if (!setPhase(st, level, t.color)) continue;
+    if (live) {
+      sfx.playSwitch(t.color, st.phased === null);
+      tintColor = PALETTE[t.color];
+      spawnBurst((c + 0.5) * TILE, (r + 0.5) * TILE, PALETTE[t.color], 12, 220, 0.55, 200);
+      updateColorbar();
+      updateHud();
+    }
+  }
+}
+
 function update(dt) {
   if (screen === 'play' || screen === 'complete') {
     if (!state.won && running) {
@@ -441,6 +503,7 @@ function update(dt) {
       acc = Math.min(acc, 0.1);
       while (acc >= SIM_DT) {
         handleEvents(step(state, level, SIM_DT));
+        fireWires(state, triggers, true);
         acc -= SIM_DT;
       }
       trail.push({ x: state.ball.x, y: state.ball.y });
@@ -613,7 +676,24 @@ function draw(now) {
   }
   ctx.globalAlpha = 1;
 
-  // paused planning aids: short simulated trajectory + momentum arrow
+  // color wires (the plan)
+  for (const w of triggers) {
+    const x = (w.c + 0.5) * TILE, y = (w.r + 0.5) * TILE;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 4);
+    ctx.globalAlpha = w.fired ? 0.22 : 0.95;
+    ctx.strokeStyle = PALETTE[w.color];
+    ctx.lineWidth = 3;
+    ctx.strokeRect(-8, -8, 16, 16);
+    ctx.globalAlpha = w.fired ? 0.08 : 0.28;
+    ctx.fillStyle = PALETTE[w.color];
+    ctx.fillRect(-8, -8, 16, 16);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // planning aids: short simulated trajectory + momentum arrow
   if (!running && screen === 'play' && !state.won) {
     drawPlanningAids(t);
   }
@@ -640,11 +720,14 @@ function draw(now) {
 function drawPlanningAids(t) {
   const b = state.ball;
 
-  // ~0.45s of honest future, sampled from a cloned state
+  // ~0.45s of honest future, sampled from a cloned state — wires included,
+  // so placing one near the path shows its effect before you run.
   const ghost = cloneState(state);
+  const ghostWires = triggers.map(w => ({ ...w }));
   const pts = [];
   for (let i = 0; i < 108; i++) {
     const evs = step(ghost, level, SIM_DT);
+    fireWires(ghost, ghostWires, false);
     if (i % 9 === 8) pts.push({ x: ghost.ball.x, y: ghost.ball.y });
     if (evs.some(e => e.type === 'death' || e.type === 'win')) break;
   }

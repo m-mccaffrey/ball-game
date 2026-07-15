@@ -14,7 +14,7 @@
       <span id="hud-name"></span>
       <span id="hud-stats" title="Color switches"></span>
       <span class="spacer"></span>
-      <button id="btn-pause" class="icon-btn" title="Run / pause (Space)">▶</button>
+      <button id="btn-pause" class="icon-btn" title="Run / stop the plan (Space)">▶</button>
       <button id="btn-reset" class="icon-btn" title="Restart hole (R)">↺</button>
       <button id="btn-mute" class="icon-btn" title="Toggle sound">🔊</button>
     </header>
@@ -22,7 +22,7 @@
     <div id="stage">
       <canvas id="game" width="960" height="640"></canvas>
       <div id="hint" class="hidden"></div>
-      <div id="pause-chip" class="hidden">⏸ paused — plan your switches, then press <b>Space</b></div>
+      <div id="pause-chip" class="hidden">🔧 planning — tap the course to place a <b>wire</b>, then <b>Space</b> to run</div>
 
       <div id="screen-menu" class="overlay">
         <h1 class="title">
@@ -35,11 +35,13 @@
         <button id="btn-play" class="big-btn">Play</button>
         <div id="menu-levels"></div>
         <p class="howto">
-          Chromatic golf: phase a color out of existence and the ball falls right through it.
-          Guide it to every <span style="color:#fde68a">spark ◎</span>.<br>
-          Time only moves when you let it — pause whenever you like and switch colors while frozen.
-          Every switch is a stroke; beat par for ★★★.<br>
-          <span class="keys">Keys: <b>1 2 3 4</b> (or <b>A S D F</b> / <b>J K L ;</b>) · <b>Space</b> run/pause · <b>R</b> restart · <b>Esc</b> levels</span>
+          Chromatic golf, played as a blueprint: place <b>color wires</b> on the course —
+          when the ball crosses a wire, that color phases out of the world (cross it again
+          later? it can't — each wire fires once).<br>
+          Press <b>▶</b> and watch your plan run hands-off. Guide the ball to every
+          <span style="color:#fde68a">spark ◎</span>; every wire that fires is a stroke —
+          beat par for ★★★.<br>
+          <span class="keys">Keys: <b>1 2 3 4</b> select a color · click/tap places a wire · <b>Space</b> run/stop · <b>R</b> restart · <b>Esc</b> levels</span>
         </p>
       </div>
 

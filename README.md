@@ -8,25 +8,22 @@
 
 ## How to play
 
-Hueball is **chromatic golf**. A ball falls under gravity through a world built from
-four colors. Press a color (**1 2 3 4**, **A S D F**, **J K L ;**, or tap the buttons)
-to **phase every block of that color out of existence** — the ball drops straight
-through them. Press it again to bring it back. Only one color can be phased at a time:
-picking a new color snaps the previous one back, even if the ball is counting on it.
+Hueball is **chromatic golf, played as a blueprint**. A ball falls under gravity
+through a world built from four colors, and phasing a color out of existence removes
+every block of that color — but you never touch the controls while the ball moves.
 
-**Time only moves when you let it.** Levels start paused; **Space** (or tapping the
-field) runs and pauses the world, and color switches work while frozen. While paused
-you see the ball's momentum arrow and a short preview of its path — toggle a color and
-watch the preview change before you commit. It's a puzzle you line up like a putt, not
-a reflex test.
+Instead, you **plan**: tap the course to place **color wires** (pick the color with
+**1 2 3 4** or the buttons). When the running ball crosses a wire, that color phases —
+exactly as if the press happened at that instant. Each wire fires once. Press **▶**
+(or **Space**) and watch your plan execute hands-off; stop and edit any time. While
+planning you see the ball's momentum arrow and a short preview of its path — wires
+included, so you can watch a placement change the outcome before you commit.
 
-Guide the ball to every **spark ◎** to clear the hole. Every color switch is a
-**stroke**; spikes and falling off the world cost a penalty stroke and return the ball
-to the tee (collected sparks stay collected). Beat **par** for ★★★. Mechanics along the
-way: colors that do two jobs at once, **bumpers**, one-way **portals**, colored
-**ghost sparks** that only exist while their color is phased, **inverse blocks** that
-only exist while phased, and **jets**. **R** restarts the hole, **Esc** opens the level
-select. Progress and stars are saved locally.
+Guide the ball to every **spark ◎** to clear the hole. Every wire that fires is a
+**stroke**; spikes and falling off the world cost a penalty stroke. Beat **par** for
+★★★. Only one color can be phased at a time — a new wire's color snaps the previous
+one back, even if the ball is counting on it. **R** restarts the hole, **Esc** opens
+the level select. Progress and stars are saved locally.
 
 ## The rebuild
 
